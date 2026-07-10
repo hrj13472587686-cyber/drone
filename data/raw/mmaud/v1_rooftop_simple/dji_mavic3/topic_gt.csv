@@ -1,5 +1,0 @@
-topic,msgtype,count
-/leica/point/absolute,geometry_msgs/msg/PointStamped,904
-/leica/point/relative,geometry_msgs/msg/PointStamped,904
-/rosout,rosgraph_msgs/msg/Log,6
-/tf,tf2_msgs/msg/TFMessage,1808

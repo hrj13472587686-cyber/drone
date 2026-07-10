@@ -1,0 +1,11 @@
+topic,msgtype,count
+/audio1/audio,audio_common_msgs/msg/AudioData,8266
+/audio2/audio,audio_common_msgs/msg/AudioData,8266
+/audio3/audio,audio_common_msgs/msg/AudioData,8267
+/audio4/audio,audio_common_msgs/msg/AudioData,8266
+/livox_avia/lidar,livox_ros_driver/msg/CustomMsg,1984
+/livox_mid360/lidar,livox_ros_driver2/msg/CustomMsg,1908
+/radar_enhanced_pcl,sensor_msgs/msg/PointCloud,2975
+/radar_pcl,sensor_msgs/msg/PointCloud,2976
+/radar_trk,sensor_msgs/msg/PointCloud,2975
+/usb_cam/image_raw,sensor_msgs/msg/Image,5945
