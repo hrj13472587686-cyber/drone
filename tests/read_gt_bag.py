@@ -37,7 +37,7 @@ def parse_bag_to_csv(bag_path: str, target_topic: str, csv_save: str):
 
 if __name__ == "__main__":
     # =========修正话题名称=========
-    BAG_PATH = r'C:\Users\86134\Desktop\drone\data\raw\mmaud\v1_rooftop_simple\dji_mavic3\2023-08-24-11-14-40_mavic3_gt.bag'
+    BAG_PATH = r'/data/raw/mmaud/v1_rooftop_simple/dji_mavic3/2023-08-24-11-14-40_mavic3_gt.bag'
     TARGET_TOPIC = "/leica/point/relative"
     OUTPUT_CSV = "leica_groundtruth.csv"
 

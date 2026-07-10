@@ -65,7 +65,7 @@ if __name__ == "__main__":
         r"C:\Users\86134\Desktop\drone\data\raw\mmaud\v1_rooftop_simple\dji_mavic3\Mavic3.bag",
     ], help="One or more .bag files")
     p.add_argument("--topic", default="/leica/point/relative", help="PointStamped topic to extract")
-    p.add_argument("--out", default=r"data\trajectories\mmaud_mavic3_gt_relative.csv", help="Output unified CSV")
+    p.add_argument("--out", default=r"mmaud_mavic3_gt_relative.csv", help="Output unified CSV")
     args = p.parse_args()
 
     make_unified(args.bags, args.topic, args.out)

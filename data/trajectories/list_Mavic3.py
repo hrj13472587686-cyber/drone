@@ -28,6 +28,6 @@ def enumerate_bag_topics(bag_path: str, out_csv: str = None):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="List topics and message counts in a ROS bag")
     p.add_argument("--bag",  required=False,     default=r"C:\Users\86134\Desktop\drone\data\raw\mmaud\v1_rooftop_simple\dji_mavic3\Mavic3.bag")
-    p.add_argument("--out", help="Output CSV file to save the topic list and counts")
+    p.add_argument("--out", required=False,     default=r"C:\Users\86134\Desktop\drone\data\raw\mmaud\v1_rooftop_simple\dji_mavic3\Mavic3_topics.csv")
     args = p.parse_args()
     enumerate_bag_topics(args.bag, args.out)
