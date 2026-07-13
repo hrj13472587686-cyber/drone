@@ -156,9 +156,9 @@ if __name__ == "__main__":
 
     # 保存指标CSV
     metrics_df = pd.DataFrame({
-        "metric":["RMSE_3D","ADE","FDE","RMSE_X","RMSE_Y","RMSE_Z"],
-        "value":[rmse,ade,fde,rmse_x,rmse_y,rmse_z],
-        "unit":["m","m","m","m","m","m"]
+        "metric": ["RMSE_3D", "ADE", "FDE", "RMSE_X", "RMSE_Y", "RMSE_Z"],
+        "value": [rmse, ade, fde, rmse_x, rmse_y, rmse_z],
+        "unit": ["m", "m", "m", "m", "m", "m"]
     })
     metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\cv_kf_slide_summary.csv", index=False)
     print(f"指标文件保存: cv_kf_slide_summary.csv")
