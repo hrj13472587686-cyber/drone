@@ -244,4 +244,3 @@ if __name__ == "__main__":
     ax4.legend(); ax4.grid()
     fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_z.png", dpi=150, bbox_inches="tight")
     plt.show()
-
