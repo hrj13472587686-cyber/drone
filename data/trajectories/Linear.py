@@ -79,7 +79,7 @@ print(f"FDE  均值:{np.mean(fde_arr):.4f} | 最大:{np.max(fde_arr):.4f} | 最�
 print("="*70)
 
 # 写入本地文本，百分百能看到结果
-with open("metrics_result.txt", "w", encoding="utf-8") as f:
+with open("../../results/tables/mmaud_mavic3_gt_relative_summary.csv", "w", encoding="utf-8") as f:
     f.write("="*70 + "\n")
     f.write(f"【全窗口冒烟测试 obs={obs_steps} pred={pred_steps}】\n")
     f.write(f"有效窗口总数：{len(rmse_arr)}\n")
@@ -87,7 +87,7 @@ with open("metrics_result.txt", "w", encoding="utf-8") as f:
     f.write(f"ADE  均值:{np.mean(ade_arr):.4f} | 最大:{np.max(ade_arr):.4f} | 最小:{np.min(ade_arr):.4f} | 标准差:{np.std(ade_arr):.4f}\n")
     f.write(f"FDE  均值:{np.mean(fde_arr):.4f} | 最大:{np.max(fde_arr):.4f} | 最小:{np.min(fde_arr):.4f} | 标准差:{np.std(fde_arr):.4f}\n")
     f.write("="*70 + "\n")
-print("指标已保存至 metrics_result.txt", flush=True)
+print("指标已保存至 mmaud_mavic3_gt_relative_summary.csv", flush=True)
 
 # 全局整体线性外推（用全部数据预测未来5帧）
 full_model = LinearRegression()
@@ -106,7 +106,7 @@ ax = fig.add_subplot(111, projection="3d")
 # 真实完整轨迹 橙色
 ax.plot(x_all, y_all, z_all, c="#ff5a36", lw=2, label="真实轨迹")
 ax.scatter(x_all, y_all, z_all, color="#ff5a36", s=12, alpha=0.6)
-# 所有窗口短时预测 浅灰细线
+# 所有窗口短时预测 蓝细线
 for item in all_window_pred:
     xp, yp, zp = item["xyz_pred"].T
     ax.plot(xp, yp, zp, c="#2367eb", lw=0.7, alpha=0.35)
