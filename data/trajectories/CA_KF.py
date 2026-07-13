@@ -222,7 +222,7 @@ if __name__ == "__main__":
     ax2.plot(timestamps, kf_traj[:,0], "b--", label="CA_KF滤波X")
     ax2.set_title("X轴时序")
     ax2.legend(); ax2.grid()
-    fig2.savefig("ca_kf_x.png", dpi=150, bbox_inches="tight")
+    fig2.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_x.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     # 图3 Y时序
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     ax3.plot(timestamps, kf_traj[:,1], "b--", label="CA_KF滤波Y")
     ax3.set_title("Y轴时序")
     ax3.legend(); ax3.grid()
-    fig3.savefig("ca_kf_y.png", dpi=150, bbox_inches="tight")
+    fig3.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_y.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     # 图4 Z时序
@@ -242,6 +242,6 @@ if __name__ == "__main__":
     ax4.plot(timestamps, kf_traj[:,2], "b--", label="CA_KF滤波Z")
     ax4.set_title("Z轴时序")
     ax4.legend(); ax4.grid()
-    fig4.savefig("ca_kf_z.png", dpi=150, bbox_inches="tight")
+    fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_z.png", dpi=150, bbox_inches="tight")
     plt.show()
 

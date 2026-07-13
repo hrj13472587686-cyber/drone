@@ -160,7 +160,7 @@ if __name__ == "__main__":
         "value": [rmse, ade, fde, rmse_x, rmse_y, rmse_z],
         "unit": ["m", "m", "m", "m", "m", "m"]
     })
-    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\cv_kf_slide_summary.csv", index=False)
+    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\cv_kf_summary.csv", index=False)
     print(f"指标文件保存: cv_kf_summary.csv")
 
     # ====================== 单独图像保存 ======================
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     ax2.set_ylabel("X坐标")
     ax2.legend()
     ax2.grid(True)
-    fig2.savefig("cv_kf_plot_x_time.png", dpi=150, bbox_inches="tight")
+    fig2.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_plot_x_time.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     # 3 Y轴时序对比
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     ax3.set_ylabel("Y坐标")
     ax3.legend()
     ax3.grid(True)
-    fig3.savefig("cv_kf_plot_y_time.png", dpi=150, bbox_inches="tight")
+    fig3.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_plot_y_time.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     # 4 Z轴时序对比
@@ -219,6 +219,6 @@ if __name__ == "__main__":
     ax4.set_ylabel("Z坐标")
     ax4.legend()
     ax4.grid(True)
-    fig4.savefig("cv_kf_plot_z_time.png", dpi=150, bbox_inches="tight")
+    fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_plot_z_time.png", dpi=150, bbox_inches="tight")
     plt.show()
 
