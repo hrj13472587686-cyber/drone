@@ -198,7 +198,7 @@ if __name__ == "__main__":
         "unit": ["m", "m", "m", "m", "m", "m"]
     })
     metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_metrics.csv", index=False)
-    print("指标文件已保存: ca_kf_metrics.csv")
+    print("指标文件已保存: ca_kf_summary.csv")
 
     # ====================== 独立分开绘图 ======================
     plt.rcParams["font.sans-serif"] = ["SimHei"]
