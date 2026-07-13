@@ -180,7 +180,7 @@ if __name__ == "__main__":
     ax1.set_title("3D轨迹对比")
     ax1.legend()
     ax1.grid(True)
-    fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_plot_3d_trajectory.png", dpi=150, bbox_inches="tight")
+    fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_3d.png", dpi=150, bbox_inches="tight")
     plt.show()
 
     # 2 X轴时序对比
