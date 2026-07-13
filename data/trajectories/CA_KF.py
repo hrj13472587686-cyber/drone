@@ -119,7 +119,7 @@ obs_steps = 8    # 观测帧数
 pred_steps = 5   # 预测帧数
 dims = 3
 
-def sliding_ca_predict(seq, time_seq, obs_steps, pred_steps, std_pos=0.04, std_acc=0.01):
+def sliding_ca_predict(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1):
     N = len(seq)
     full_pred = np.zeros_like(seq)
     window_len = obs_steps + pred_steps
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     gt_all = df[["x", "y", "z"]].values
 
     # 运行CA-KF滑动窗口滤波
-    kf_traj = sliding_ca_predict(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.01)
+    kf_traj = sliding_ca_predict(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1)
 
     # 计算指标
     rmse, ade, fde, rmse_x, rmse_y, rmse_z = compute_metrics(gt_all, kf_traj)
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         "value": [rmse, ade, fde, rmse_x, rmse_y, rmse_z],
         "unit": ["m", "m", "m", "m", "m", "m"]
     })
-    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_metrics.csv", index=False)
+    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_summary.csv", index=False)
     print("指标文件已保存: ca_kf_summary.csv")
 
     # ====================== 独立分开绘图 ======================
@@ -208,9 +208,9 @@ if __name__ == "__main__":
     fig1 = plt.figure(figsize=(10,8))
     ax1 = fig1.add_subplot(111, projection='3d')
     ax1.plot(gt_all[:,0], gt_all[:,1] , gt_all[:,2], c="#ff3333", lw=1.8, label="真值")
-    ax1.plot(kf_traj[:,0], kf_traj[:,1], kf_traj[:,2], c="#0066ff", lw=0.7, label="CA-KF匀加速滤波")
+    ax1.plot(kf_traj[:,0], kf_traj[:,1], kf_traj[:,2], c="#0066ff", lw=0.7, label="CA_KF匀加速滤波")
     ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
-    ax1.set_title("3D轨迹 CA-KF")
+    ax1.set_title("3D轨迹 CA_KF")
     ax1.legend(); ax1.grid()
     fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_3d.png", dpi=150, bbox_inches="tight")
     plt.show()
@@ -219,7 +219,7 @@ if __name__ == "__main__":
     fig2 = plt.figure(figsize=(10,6))
     ax2 = fig2.add_subplot(111)
     ax2.plot(timestamps, gt_all[:,0], "r-", label="真值X")
-    ax2.plot(timestamps, kf_traj[:,0], "b--", label="CA滤波X")
+    ax2.plot(timestamps, kf_traj[:,0], "b--", label="CA_KF滤波X")
     ax2.set_title("X轴时序")
     ax2.legend(); ax2.grid()
     fig2.savefig("ca_kf_x.png", dpi=150, bbox_inches="tight")
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     fig3 = plt.figure(figsize=(10,6))
     ax3 = fig3.add_subplot(111)
     ax3.plot(timestamps, gt_all[:,1], "r-", label="真值Y")
-    ax3.plot(timestamps, kf_traj[:,1], "b--", label="CA滤波Y")
+    ax3.plot(timestamps, kf_traj[:,1], "b--", label="CA_KF滤波Y")
     ax3.set_title("Y轴时序")
     ax3.legend(); ax3.grid()
     fig3.savefig("ca_kf_y.png", dpi=150, bbox_inches="tight")
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     fig4 = plt.figure(figsize=(10,6))
     ax4 = fig4.add_subplot(111)
     ax4.plot(timestamps, gt_all[:,2], "r-", label="真值Z")
-    ax4.plot(timestamps, kf_traj[:,2], "b--", label="CA滤波Z")
+    ax4.plot(timestamps, kf_traj[:,2], "b--", label="CA_KF滤波Z")
     ax4.set_title("Z轴时序")
     ax4.legend(); ax4.grid()
     fig4.savefig("ca_kf_z.png", dpi=150, bbox_inches="tight")
