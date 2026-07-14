@@ -431,7 +431,7 @@ def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
 # ====================== 主程序：CSV读取 + 全窗口遍历 ======================
 if __name__ == "__main__":
     # -------------------------- 配置项（根据你的CSV修改）--------------------------
-    csv_path = "mmaud_mavic3_gt_relative.csv"  # 你的CSV文件路径
+    csv_path = "data/mmaud_mavic3_gt_relative.csv"  # 你的CSV文件路径
     # 列名配置
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values

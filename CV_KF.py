@@ -12,7 +12,7 @@ class CV3DKalmanFilter:
         self.std_vel = std_vel
         self.dt = None
 
-    def update_F_Q(self, dt):
+    def update(self, dt):
         self.dt = dt
         dt2 = dt ** 2
         dt3 = dt ** 3
@@ -70,73 +70,82 @@ def compute_metrics(gt, pred):
     return rmse, ade, fde, rmse_x, rmse_y, rmse_z
 
 # ====================== 滑动窗口多步预测函数 ======================
-def sliding_cv_predict(seq, time_seq, obs_steps, pred_steps, dims, std_pos=0.05, std_vel=0.1):
+def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
     """
-    seq: (N,3) 完整xyz真值序列
-    time_seq: 对应时间戳
-    obs_steps: 观测窗口长度
-    pred_steps: 预测步数
-    dims=3 三维
-    return: 完整滤波+多步预测轨迹
+    gt_win_full: 当前窗口完整序列 [win_total,3]
+    pred_win_full: 当前窗口完整序列 [win_total,3]
+    obs_steps: 观测帧数，截取 obs_steps: 之后作为预测片段评估
+    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
     """
+    # 截取【仅预测段】
+    gt_pred = gt_win_full[obs_steps:]
+    pred_pred = pred_win_full[obs_steps:]
+
+    disp_err = np.linalg.norm(gt_pred - pred_pred, axis=1)
+    rmse = np.sqrt(np.mean(np.sum((gt_pred - pred_pred) ** 2, axis=1)))
+    ade = np.mean(disp_err)
+    fde = disp_err[-1]
+
+    rmse_x = np.sqrt(np.mean((gt_pred[:, 0] - pred_pred[:, 0]) ** 2))
+    rmse_y = np.sqrt(np.mean((gt_pred[:, 1] - pred_pred[:, 1]) ** 2))
+    rmse_z = np.sqrt(np.mean((gt_pred[:, 2] - pred_pred[:, 2]) ** 2))
+    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
+
+# ====================== 滑动窗口参数 ======================
+obs_steps = 8    # 观测帧数
+pred_steps = 5   # 预测帧数
+dims = 3
+slide_step = 1    # 想要800+窗口设置=1；原先稀疏模式=8
+target_win_id = 0
+save_window_metrics_csv = True
+
+def sliding_cv_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_vel=0.2):
     N = len(seq)
     full_pred = np.zeros_like(seq)
-    for start in range(0, N, obs_steps + pred_steps):
+
+    slide_step = 1    # 重叠滑动步长
+    start = 0
+    while True:
         end_obs = start + obs_steps
-        end_pred = end_obs + pred_steps
-        if end_obs > N:
+        end_pred = start + obs_steps + pred_steps
+
+        if end_obs >= N:
             break
-        # 初始化KF，用前obs帧观测
+
         kf = CV3DKalmanFilter(std_pos, std_vel)
         kf.x[0,0] = seq[start,0]
         kf.x[1,0] = seq[start,1]
         kf.x[2,0] = seq[start,2]
         full_pred[start] = seq[start]
-        # 1. 观测窗口滤波更新
+
+        # 观测段滤波 start ~ end_obs-1
         for i in range(start+1, end_obs):
             dt = time_seq[i] - time_seq[i-1]
-            kf.update_F_Q(dt)
+            kf.update(dt)
             kf.predict()
             kf.correct(seq[i])
             full_pred[i] = kf.get_pos()
-        # 2. 无观测，纯多步预测pred_steps帧
-        current_t = time_seq[end_obs-1]
+
+        # 预测段 end_obs ~ end_pred-1
+        current_t = time_seq[end_obs - 1]
         for j in range(end_obs, min(end_pred, N)):
             dt = time_seq[j] - current_t
-            kf.update_F_Q(dt)
+            kf.update(dt)
             kf.predict()
             full_pred[j] = kf.get_pos()
             current_t = time_seq[j]
-    # 末尾不足窗口的直接单步滤波补齐
-    last_start = (N // (obs_steps+pred_steps)) * (obs_steps+pred_steps)
-    if last_start < N:
-        kf = CV3DKalmanFilter(std_pos, std_vel)
-        kf.x[0,0] = seq[last_start,0]
-        kf.x[1,0] = seq[last_start,1]
-        kf.x[2,0] = seq[last_start,2]
-        full_pred[last_start] = seq[last_start]
-        for i in range(last_start+1, N):
-            dt = time_seq[i] - time_seq[i-1]
-            kf.update_F_Q(dt)
-            kf.predict()
-            kf.correct(seq[i])
-            full_pred[i] = kf.get_pos()
+
+        start += slide_step
     return full_pred
-
-# ====================== 超参数设置 ======================
-obs_steps = 8    # 观测窗口帧数
-pred_steps = 5   # 预测帧数
-dims = 3         # xyz三维坐标
-
 # ====================== 主程序 ======================
 if __name__ == "__main__":
-    csv_path = "mmaud_mavic3_gt_relative.csv"
+    csv_path = "data/mmaud_mavic3_gt_relative.csv"
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values
     gt_all = df[["x", "y", "z"]].values
 
     # 滑动窗口CV-KF 观测8帧+预测5帧
-    kf_traj = sliding_cv_predict(gt_all, timestamps, obs_steps, pred_steps, dims)
+    kf_traj = sliding_cv_predict_overlap(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_vel=0.2)
 
     # 计算指标
     rmse, ade, fde, rmse_x, rmse_y, rmse_z = compute_metrics(gt_all, kf_traj)
@@ -170,8 +179,7 @@ if __name__ == "__main__":
     # 1 3D轨迹对比图
     fig1 = plt.figure(figsize=(10, 8))
     ax1 = fig1.add_subplot(111, projection='3d')
-    ax1.plot(gt_all[:, 0], gt_all[:, 1], gt_all[:, 2],
-             c="#ff4444", lw=1.8, label="真值轨迹")
+    ax1.scatter(gt_all[:, 0], gt_all[:, 1], gt_all[:, 2], c="#ff3333", s=6, alpha=0.7, label="真值")
     ax1.plot(kf_traj[:, 0], kf_traj[:, 1], kf_traj[:, 2],
              c="#0088ff", lw=0.7, label=f"CV-KF(obs={obs_steps}, pred={pred_steps})")
     ax1.set_xlabel("X")

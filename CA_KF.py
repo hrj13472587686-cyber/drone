@@ -186,7 +186,7 @@ def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.0
 
 # ====================== 主程序入口 ======================
 if __name__ == "__main__":
-    csv_path = "mmaud_mavic3_gt_relative.csv"
+    csv_path = "/data/mmaud_mavic3_gt_relative.csv"
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values
     gt_all = df[["x", "y", "z"]].values

@@ -7,7 +7,7 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "PingFang SC"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 读取csv
-df = pd.read_csv("mmaud_mavic3_gt_relative.csv")
+df = pd.read_csv("../mmaud_mavic3_gt_relative.csv")
 x = df["x"]
 y = df["y"]
 z = df["z"]

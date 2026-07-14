@@ -8,7 +8,7 @@ plt.rcParams["axes.unicode_minus"] = False  # 负号正常显示
 # ========================================
 
 # 读取CSV
-df = pd.read_csv("mmaud_mavic3_gt_relative.csv")
+df = pd.read_csv("../mmaud_mavic3_gt_relative.csv")
 x = df["x"]
 y = df["y"]
 z = df["z"]

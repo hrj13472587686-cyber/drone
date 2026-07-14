@@ -73,8 +73,8 @@ def compute(path):
 
 def main():
     p = argparse.ArgumentParser(description='Compute GT CSV stats')
-    p.add_argument('--csv', required=False,     default=r"C:\Users\86134\Desktop\drone\data\trajectories\mmaud_mavic3_gt_relative.csv")
-    p.add_argument('--json-out', required=False, default=r"C:\Users\86134\Desktop\drone\data\trajectories\mmaud_mavic3_gt_relative_stats.json")
+    p.add_argument('--csv', required=False,     default=r"C:\Users\86134\Desktop\drone\data\mmaud_mavic3_gt_relative.csv")
+    p.add_argument('--json-out', required=False, default=r"C:\Users\86134\Desktop\drone\data\mmaud_mavic3_gt_relative_stats.json")
     args = p.parse_args()
     res = compute(args.csv)
     # human-readable

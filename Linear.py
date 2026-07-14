@@ -14,7 +14,7 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "PingFang SC"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # ===================== 读取CSV轨迹数据 =====================
-df = pd.read_csv("mmaud_mavic3_gt_relative.csv")
+df = pd.read_csv("data/mmaud_mavic3_gt_relative.csv")
 t_all = df["timestamp"].values
 xyz = df[["x", "y", "z"]].to_numpy()
 x_all = xyz[:, 0]
@@ -79,7 +79,7 @@ print(f"FDE  均值:{np.mean(fde_arr):.4f} | 最大:{np.max(fde_arr):.4f} | 最�
 print("="*70)
 
 # 写入本地文本，百分百能看到结果
-with open("../../results/tables/mmaud_mavic3_gt_relative_summary.csv", "w", encoding="utf-8") as f:
+with open("results/tables/mmaud_mavic3_gt_relative_summary.csv", "w", encoding="utf-8") as f:
     f.write("="*70 + "\n")
     f.write(f"【全窗口冒烟测试 obs={obs_steps} pred={pred_steps}】\n")
     f.write(f"有效窗口总数：{len(rmse_arr)}\n")
