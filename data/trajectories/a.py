@@ -3,86 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def plot_single_pred_window(gt_all, kf_full_traj, win_start, obs_len, pred_len, view_3d=False):
-    """
-    gt_all: [T,3] 完整真值
-    kf_full_traj: [T,3] KF整条输出轨迹
-    win_start: 当前窗口起始索引
-    obs_len: 历史观测帧数
-    pred_len: 预测帧数
-    view_3d: True绘制3D轨迹，False绘制XY平面2D
-    配色规则：
-        窗口外：灰色
-        history观测段：橙色
-        future预测段：蓝色
-    """
-    T_total = gt_all.shape[0]
-    t_arr = np.arange(T_total)
-
-    # 1. 区间边界
-    hist_end = win_start + obs_len
-    pred_end = hist_end + pred_len
-
-    # 2. 生成三段掩码
-    mask_outside = (t_arr < win_start) | (t_arr >= pred_end)  # 窗口外 → 灰色
-    mask_history = (t_arr >= win_start) & (t_arr < hist_end)  # history → 橙色
-    mask_future = (t_arr >= hist_end) & (t_arr < pred_end)    # future → 蓝色
-
-    # 安全截断，防止越界
-    pred_end = min(pred_end, T_total)
-
-    if view_3d:
-        fig = plt.figure(figsize=(10, 7))
-        ax = fig.add_subplot(111, projection='3d')
-        # 灰色：窗口外完整真值
-        ax.plot(gt_all[mask_outside, 0], gt_all[mask_outside, 1], gt_all[mask_outside, 2],
-                c="gray", lw=1, alpha=0.35)
-        # 橙色 History
-        ax.plot(gt_all[mask_history, 0], gt_all[mask_history, 1], gt_all[mask_history, 2],
-                c="orange", lw=2, label="GT History")
-        ax.plot(kf_full_traj[mask_history, 0], kf_full_traj[mask_history, 1], kf_full_traj[mask_history, 2],
-                c="darkorange", lw=1.6, ls="--", label="KF History")
-        # 蓝色 Future
-        ax.plot(gt_all[mask_future, 0], gt_all[mask_future, 1], gt_all[mask_future, 2],
-                c="royalblue", lw=2, label="GT Future")
-        ax.plot(kf_full_traj[mask_future, 0], kf_full_traj[mask_future, 1], kf_full_traj[mask_future, 2],
-                c="blue", lw=1.6, ls="--", label="KF Predict")
-        # 分界圆点标记
-        ax.plot(gt_all[hist_end,0], gt_all[hist_end,1], gt_all[hist_end,2], "ko", markersize=5)
-
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-        # ax.view_init(elev=25, azim=50)
-    else:
-        fig, ax = plt.subplots(figsize=(9, 6))
-        # 灰色：窗口外
-        ax.plot(gt_all[mask_outside, 0], gt_all[mask_outside, 1],
-                c="gray", lw=1, alpha=0.35)
-        # History 橙色
-        ax.plot(gt_all[mask_history, 0], gt_all[mask_history, 1],
-                c="orange", lw=2, label="GT History")
-        ax.plot(kf_full_traj[mask_history, 0], kf_full_traj[mask_history, 1],
-                c="darkorange", lw=1.6, ls="--", label="KF History")
-        # Future 蓝色
-        ax.plot(gt_all[mask_future, 0], gt_all[mask_future, 1],
-                c="royalblue", lw=2, label="GT Future")
-        ax.plot(kf_full_traj[mask_future, 0], kf_full_traj[mask_future, 1],
-                c="blue", lw=1.6, ls="--", label="KF Predict")
-        # 分界圆点
-        ax.plot(gt_all[hist_end,0], gt_all[hist_end,1], "ko", markersize=5)
-
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.axis("equal")
-
-    ax.legend()
-    ax.grid(True, alpha=0.25)
-    plt.title(f"Prediction Window start={win_start}")
-    plt.tight_layout()
-    plt.savefig(f"C:\\Users\\86134\\Desktop\\drone\\results\\figures\\window_{win_start}.png", dpi=300, bbox_inches="tight")
-    plt.show()
-
 # ====================== 3D CA-KF 恒加速度卡尔曼滤波类 ======================
 class CA3DKalmanFilter:
     def __init__(self, std_pos, std_acc):
@@ -194,33 +114,64 @@ def compute_metrics(gt, pred):
     rmse_z = np.sqrt(np.mean((gt[:,2]-pred[:,2])**2))
     return rmse, ade, fde, rmse_x, rmse_y, rmse_z
 
+
+def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
+    """
+    gt_win_full: 当前窗口完整序列 [win_total,3]
+    pred_win_full: 当前窗口完整序列 [win_total,3]
+    obs_steps: 观测帧数，截取 obs_steps: 之后作为预测片段评估
+    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
+    """
+    # 截取【仅预测段】
+    gt_pred = gt_win_full[obs_steps:]
+    pred_pred = pred_win_full[obs_steps:]
+
+    disp_err = np.linalg.norm(gt_pred - pred_pred, axis=1)
+    rmse = np.sqrt(np.mean(np.sum((gt_pred - pred_pred) ** 2, axis=1)))
+    ade = np.mean(disp_err)
+    fde = disp_err[-1]
+
+    rmse_x = np.sqrt(np.mean((gt_pred[:, 0] - pred_pred[:, 0]) ** 2))
+    rmse_y = np.sqrt(np.mean((gt_pred[:, 1] - pred_pred[:, 1]) ** 2))
+    rmse_z = np.sqrt(np.mean((gt_pred[:, 2] - pred_pred[:, 2]) ** 2))
+    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
+
 # ====================== 滑动窗口参数 ======================
 obs_steps = 8    # 观测帧数
 pred_steps = 5   # 预测帧数
 dims = 3
+slide_step = 1    # 想要800+窗口设置=1；原先稀疏模式=8
+target_win_id = 0
+save_window_metrics_csv = True
 
-def sliding_ca_predict(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1):
+def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1):
     N = len(seq)
     full_pred = np.zeros_like(seq)
-    window_len = obs_steps + pred_steps
-    for start in range(0, N, window_len):
+    win_total = obs_steps + pred_steps
+    slide_step = 1    # 重叠滑动步长
+    start = 0
+    while True:
         end_obs = start + obs_steps
-        end_pred = end_obs + pred_steps
-        if end_obs > N:
+        end_pred = start + win_total
+
+        if end_obs >= N:
             break
+
         kf = CA3DKalmanFilter(std_pos, std_acc)
         kf.x[0,0] = seq[start,0]
         kf.x[1,0] = seq[start,1]
         kf.x[2,0] = seq[start,2]
         full_pred[start] = seq[start]
-        # 观测窗口更新
+
+        # 观测段滤波 start ~ end_obs-1
         for i in range(start+1, end_obs):
             dt = time_seq[i] - time_seq[i-1]
             kf.update_F_Q(dt)
             kf.predict()
             kf.update(seq[i])
             full_pred[i] = kf.get_pos()
-        # 纯预测无观测
+
+        # 预测段 end_obs ~ end_pred-1
         current_t = time_seq[end_obs - 1]
         for j in range(end_obs, min(end_pred, N)):
             dt = time_seq[j] - current_t
@@ -228,34 +179,23 @@ def sliding_ca_predict(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_a
             kf.predict()
             full_pred[j] = kf.get_pos()
             current_t = time_seq[j]
-    # 尾部剩余数据单独滤波
-    last_start = (N // window_len) * window_len
-    if last_start < N:
-        kf = CA3DKalmanFilter(std_pos, std_acc)
-        kf.x[0,0] = seq[last_start,0]
-        kf.x[1,0] = seq[last_start,1]
-        kf.x[2,0] = seq[last_start,2]
-        full_pred[last_start] = seq[last_start]
-        for i in range(last_start+1, N):
-            dt = time_seq[i] - time_seq[i-1]
-            kf.update_F_Q(dt)
-            kf.predict()
-            kf.update(seq[i])
-            full_pred[i] = kf.get_pos()
+
+        start += slide_step
     return full_pred
 
 # ====================== 主程序入口 ======================
 if __name__ == "__main__":
-    csv_path = "mmaud_mavic3_gt_relative.csv"
+    csv_path = "../mmaud_mavic3_gt_relative.csv"
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values
     gt_all = df[["x", "y", "z"]].values
 
     # 运行CA-KF滑动窗口滤波
-    kf_traj = sliding_ca_predict(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1)
+    kf_traj = sliding_ca_predict_overlap(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.01)
+
 
     # 计算指标
-    rmse, ade, fde, rmse_x, rmse_y, rmse_z = compute_metrics(gt_all, kf_traj)
+    rmse, ade, fde, rmse_x, rmse_y, rmse_z = compute_pred_only_metrics(gt_all, kf_traj, obs_steps)
     disp_err = np.linalg.norm(gt_all - kf_traj, axis=1)
 
     print("=" * 42)
@@ -270,8 +210,7 @@ if __name__ == "__main__":
     print(f"RMSE_Z   : {rmse_z:.6f} m")
     print("=" * 42)
 
-
-    # 保存指标CSV
+    # 保存汇总指标csv
     metrics_df = pd.DataFrame({
         "metric": ["RMSE_3D", "ADE", "FDE", "RMSE_X", "RMSE_Y", "RMSE_Z"],
         "value": [rmse, ade, fde, rmse_x, rmse_y, rmse_z],
@@ -284,82 +223,43 @@ if __name__ == "__main__":
     plt.rcParams["font.sans-serif"] = ["SimHei"]
     plt.rcParams["axes.unicode_minus"] = False
 
+    # 图1：3D轨迹
+    fig1 = plt.figure(figsize=(10,8))
+    ax1 = fig1.add_subplot(111, projection='3d')
+    ax1.plot(gt_all[:,0], gt_all[:,1] , gt_all[:,2], c="#ff3333", lw=1.8, label="真值")
+    ax1.plot(kf_traj[:,0], kf_traj[:,1], kf_traj[:,2], c="#0066ff", lw=0.7, label="CA_KF匀加速滤波")
+    ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
+    ax1.set_title("3D轨迹 CA_KF")
+    ax1.legend(); ax1.grid()
+    fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_3d.png", dpi=150, bbox_inches="tight")
+    plt.show()
 
-    # 指定窗口切片
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
+    # 图2 X时序
+    fig2 = plt.figure(figsize=(10,6))
+    ax2 = fig2.add_subplot(111)
+    ax2.plot(timestamps, gt_all[:,0], "r-", label="真值X")
+    ax2.plot(timestamps, kf_traj[:,0], "b--", label="CA_KF滤波X")
+    ax2.set_title("X轴时序")
+    ax2.legend(); ax2.grid()
+    fig2.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_x.png", dpi=150, bbox_inches="tight")
+    plt.show()
 
+    # 图3 Y时序
+    fig3 = plt.figure(figsize=(10,6))
+    ax3 = fig3.add_subplot(111)
+    ax3.plot(timestamps, gt_all[:,1], "r-", label="真值Y")
+    ax3.plot(timestamps, kf_traj[:,1], "b--", label="CA_KF滤波Y")
+    ax3.set_title("Y轴时序")
+    ax3.legend(); ax3.grid()
+    fig3.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_y.png", dpi=150, bbox_inches="tight")
+    plt.show()
 
-    def plot_single_pred_window(gt_all, kf_full_traj, win_start:{236}, obs_len, pred_len, view_3d=False):
-        """
-        gt_all: [T,3] 完整真值
-        kf_full_traj: [T,3] KF整条输出轨迹
-        win_start: 当前窗口起始索引
-        obs_len: 历史观测帧数
-        pred_len: 预测帧数
-        view_3d: True绘制3D轨迹，False绘制XY平面2D
-        """
-        T_total = gt_all.shape[0]
-        t_arr = np.arange(T_total)
-
-        # 1. 区间边界
-        hist_end = win_start + obs_len
-        pred_end = hist_end + pred_len
-
-        # 2. 生成三段掩码
-        mask_outside = (t_arr < win_start) | (t_arr >= pred_end)  # 窗口外 → 灰色
-        mask_history = (t_arr >= win_start) & (t_arr < hist_end)  # history → 橙色
-        mask_future = (t_arr >= hist_end) & (t_arr < pred_end)  # future → 蓝色
-
-        # 安全截断，防止越界
-        pred_end = min(pred_end, T_total)
-
-        if view_3d:
-            fig = plt.figure(figsize=(10, 7))
-            ax = fig.add_subplot(111, projection='3d')
-            # 灰色：窗口外完整真值
-            ax.plot(gt_all[mask_outside, 0], gt_all[mask_outside, 1], gt_all[mask_outside, 2],
-                    c="gray", lw=1, alpha=0.35)
-            # 橙色 History
-            ax.plot(gt_all[mask_history, 0], gt_all[mask_history, 1], gt_all[mask_history, 2],
-                    c="orange", lw=2, label="GT History")
-            ax.plot(kf_full_traj[mask_history, 0], kf_full_traj[mask_history, 1], kf_full_traj[mask_history, 2],
-                    c="darkorange", lw=1.6, ls="--", label="KF History")
-            # 蓝色 Future
-            ax.plot(gt_all[mask_future, 0], gt_all[mask_future, 1], gt_all[mask_future, 2],
-                    c="royalblue", lw=2, label="GT Future")
-            ax.plot(kf_full_traj[mask_future, 0], kf_full_traj[mask_future, 1], kf_full_traj[mask_future, 2],
-                    c="blue", lw=1.6, ls="--", label="KF Predict")
-
-            ax.set_xlabel("X")
-            ax.set_ylabel("Y")
-            ax.set_zlabel("Z")
-            # 如需固定视角取消下一行注释
-            # ax.view_init(elev=25, azim=50)
-        else:
-            fig, ax = plt.subplots(figsize=(9, 6))
-            # 灰色：窗口外
-            ax.plot(gt_all[mask_outside, 0], gt_all[mask_outside, 1],
-                    c="gray", lw=1, alpha=0.35)
-            # History 橙色
-            ax.plot(gt_all[mask_history, 0], gt_all[mask_history, 1],
-                    c="orange", lw=2, label="GT History")
-            ax.plot(kf_full_traj[mask_history, 0], kf_full_traj[mask_history, 1],
-                    c="darkorange", lw=1.6, ls="--", label="KF History")
-            # Future 蓝色
-            ax.plot(gt_all[mask_future, 0], gt_all[mask_future, 1],
-                    c="royalblue", lw=2, label="GT Future")
-            ax.plot(kf_full_traj[mask_future, 0], kf_full_traj[mask_future, 1],
-                    c="blue", lw=1.6, ls="--", label="KF Predict")
-            ax.set_xlabel("X")
-            ax.set_ylabel("Y")
-            ax.axis("equal")
-
-        # ===================== 调用窗口绘图（重点！）=====================
-        WIN_START = 236  # 指定窗口起始索引
-        # 绘制2D XY俯视图
-        plot_single_pred_window(gt_all, kf_traj, win_start=WIN_START, obs_len=obs_steps, pred_len=pred_steps,
-                                view_3d=False)
-        # 如需3D轨迹打开下面一行
-        plot_single_pred_window(gt_all, kf_traj, win_start=WIN_START, obs_len=obs_steps, pred_len=pred_steps, view_3d=True)
+    # 图4 Z时序
+    fig4 = plt.figure(figsize=(10,6))
+    ax4 = fig4.add_subplot(111)
+    ax4.plot(timestamps, gt_all[:,2], "r-", label="真值Z")
+    ax4.plot(timestamps, kf_traj[:,2], "b--", label="CA_KF滤波Z")
+    ax4.set_title("Z轴时序")
+    ax4.legend(); ax4.grid()
+    fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_z.png", dpi=150, bbox_inches="tight")
+    plt.show()

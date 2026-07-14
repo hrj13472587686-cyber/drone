@@ -1,0 +1,19 @@
+{
+  "total_rows": 904,
+  "rows_with_all_xyz_timestamp": 904,
+  "missing_fields_count": 0,
+  "parse_errors_count": 0,
+  "nonfinite_count": 0,
+  "first_timestamp": 1692846880.4745219,
+  "last_timestamp": 1692847064.682557,
+  "time_span_s": 184.2080352306366,
+  "median_interval_s": 0.20031213760375977,
+  "mean_interval_s": 0.20399560933625316,
+  "timestamp_decrease_count": 0,
+  "min_x": 0.3545015520489869,
+  "max_x": 6.520261247520125,
+  "min_y": 7.345583726954828,
+  "max_y": 24.229786098236218,
+  "min_z": -0.4020637384842445,
+  "max_z": 19.768792910920112
+}
