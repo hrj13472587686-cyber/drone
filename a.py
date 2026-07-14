@@ -257,8 +257,8 @@ if __name__ == "__main__":
         "value": [rmse, mean_ade, mean_fde, rmse_x, rmse_y, rmse_z],
         "unit": ["m", "m", "m", "m", "m", "m"]
     })
-    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_summary.csv", index=False)
-    print("指标文件已保存: ca_kf_summary.csv")
+    metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_window236.csv", index=False)
+    print("指标文件已保存: ca_kf_window236.csv")
 
     # ====================== 独立分开绘图 ======================
     plt.rcParams["font.sans-serif"] = ["SimHei"]
