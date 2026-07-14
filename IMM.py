@@ -316,7 +316,7 @@ class IMM_CVCA_3D:
 obs_steps = 8    # 观测帧数
 pred_steps = 5   # 预测帧数
 dims = 3
-slide_step = 1    # 想要800+窗口设置=1；原先稀疏模式=8
+stride= 1  # 重叠滑动步长
 target_win_id = 0
 save_window_metrics_csv = True
 
@@ -325,7 +325,6 @@ def sliding_imm_predict_overlap(seq, time_seq, obs_steps, pred_steps,
     N = len(seq)
     full_pred = np.zeros_like(seq)
     win_total = obs_steps + pred_steps
-    slide_step = 1    # 重叠滑动步长
     start = 0
     while True:
         end_obs = start + obs_steps
@@ -403,7 +402,7 @@ def sliding_imm_predict_overlap(seq, time_seq, obs_steps, pred_steps,
 
             current_t = time_seq[j]
 
-        start += slide_step
+        start += stride
         print(f"start={start}, 预测帧j={j}, 观测最后帧={end_obs - 1}, dt={dt:.3f}")
     return full_pred
 

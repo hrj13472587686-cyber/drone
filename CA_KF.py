@@ -140,7 +140,7 @@ def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
 obs_steps = 8    # 观测帧数
 pred_steps = 5   # 预测帧数
 dims = 3
-slide_step = 1    # 想要800+窗口设置=1；原先稀疏模式=8
+stride = 1    # 重叠滑动步长
 target_win_id = 0
 save_window_metrics_csv = True
 
@@ -148,7 +148,6 @@ def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.0
     N = len(seq)
     full_pred = np.zeros_like(seq)
 
-    slide_step = 1    # 重叠滑动步长
     start = 0
     while True:
         end_obs = start + obs_steps
@@ -180,13 +179,13 @@ def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.0
             full_pred[j] = kf.get_pos()
             current_t = time_seq[j]
 
-        start += slide_step
+        start += stride
         print(f"start={start}, 预测帧j={j}, 观测最后帧={end_obs - 1}, dt={dt:.3f}")
     return full_pred
 
 # ====================== 主程序入口 ======================
 if __name__ == "__main__":
-    csv_path = "/data/mmaud_mavic3_gt_relative.csv"
+    csv_path = "./data/mmaud_mavic3_gt_relative.csv"
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values
     gt_all = df[["x", "y", "z"]].values
