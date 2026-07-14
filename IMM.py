@@ -324,11 +324,10 @@ def sliding_imm_predict_overlap(seq, time_seq, obs_steps, pred_steps,
                                 std_pos=0.05, std_vel_cv=0.2, std_acc_ca=0.1):
     N = len(seq)
     full_pred = np.zeros_like(seq)
-    win_total = obs_steps + pred_steps
     start = 0
     while True:
         end_obs = start + obs_steps
-        end_pred = start + win_total
+        end_pred = start + obs_steps + pred_steps
 
         if end_obs >= N:
             break
