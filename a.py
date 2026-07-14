@@ -104,116 +104,157 @@ class CA3DKalmanFilter:
         return np.array([ax, ay, az])
 
 # ====================== 评估指标 RMSE / ADE / FDE ======================
-def compute_metrics(gt, pred):
-    disp_err = np.linalg.norm(gt - pred, axis=1)
-    rmse = np.sqrt(np.mean(np.sum((gt - pred) ** 2, axis=1)))
-    ade = np.mean(disp_err)
-    fde = disp_err[-1]
-    rmse_x = np.sqrt(np.mean((gt[:,0]-pred[:,0])**2))
-    rmse_y = np.sqrt(np.mean((gt[:,1]-pred[:,1])**2))
-    rmse_z = np.sqrt(np.mean((gt[:,2]-pred[:,2])**2))
-    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
 
-
-def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
-    """
-    gt_win_full: 当前窗口完整序列 [win_total,3]
-    pred_win_full: 当前窗口完整序列 [win_total,3]
-    obs_steps: 观测帧数，截取 obs_steps: 之后作为预测片段评估
-    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
-    """
-    # 截取【仅预测段】
-    gt_pred = gt_win_full[obs_steps:]
-    pred_pred = pred_win_full[obs_steps:]
-
-    disp_err = np.linalg.norm(gt_pred - pred_pred, axis=1)
-    rmse = np.sqrt(np.mean(np.sum((gt_pred - pred_pred) ** 2, axis=1)))
-    ade = np.mean(disp_err)
-    fde = disp_err[-1]
-
-    rmse_x = np.sqrt(np.mean((gt_pred[:, 0] - pred_pred[:, 0]) ** 2))
-    rmse_y = np.sqrt(np.mean((gt_pred[:, 1] - pred_pred[:, 1]) ** 2))
-    rmse_z = np.sqrt(np.mean((gt_pred[:, 2] - pred_pred[:, 2]) ** 2))
-    return rmse, ade, fde, rmse_x, rmse_y, rmse_z
 
 # ====================== 滑动窗口参数 ======================
 obs_steps = 8    # 观测帧数
 pred_steps = 5   # 预测帧数
 dims = 3
-slide_step = 1    # 想要800+窗口设置=1；原先稀疏模式=8
+stride = 1    # 重叠滑动步长
 target_win_id = 0
 save_window_metrics_csv = True
 
+def window_list(results_window, pred_steps):
+    ade_all = []
+    fde_all = []
+    horizon_err = [[] for _ in range(pred_steps)]
+    for win in results_window:
+        gt = win["gt_pred"]
+        pred = win["est_pred"]
+        L = len(gt)
+        if L < pred_steps:
+            continue
+        disp = np.linalg.norm(gt - pred, axis=1)
+        ade_all.append(np.mean(disp))
+        fde_all.append(disp[-1])
+        for h in range(pred_steps):
+            horizon_err[h].append(disp[h])
+    mean_ade = np.mean(ade_all)
+    mean_fde = np.mean(fde_all)
+    horizon_mean = [np.mean(arr) for arr in horizon_err]
+    return mean_ade, mean_fde, horizon_mean
+
+
 def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps, std_pos=0.05, std_acc=0.1):
     N = len(seq)
-    full_pred = np.zeros_like(seq)
-    win_total = obs_steps + pred_steps
-    slide_step = 1    # 重叠滑动步长
+    output_wins = []
+    stride = 1
     start = 0
     while True:
         end_obs = start + obs_steps
-        end_pred = start + win_total
-
+        end_pred = start + obs_steps + pred_steps
         if end_obs >= N:
             break
 
         kf = CA3DKalmanFilter(std_pos, std_acc)
-        kf.x[0,0] = seq[start,0]
-        kf.x[1,0] = seq[start,1]
-        kf.x[2,0] = seq[start,2]
-        full_pred[start] = seq[start]
+        kf.x[0, 0] = seq[start, 0]
+        kf.x[3, 0] = seq[start, 1]
+        kf.x[6, 0] = seq[start, 2]
 
-        # 观测段滤波 start ~ end_obs-1
-        for i in range(start+1, end_obs):
-            dt = time_seq[i] - time_seq[i-1]
+        # 观测段
+        for i in range(start + 1, end_obs):
+            dt = time_seq[i] - time_seq[i - 1]
             kf.update_F_Q(dt)
             kf.predict()
             kf.update(seq[i])
-            full_pred[i] = kf.get_pos()
 
-        # 预测段 end_obs ~ end_pred-1
+        pred_length = min(end_pred, N) - end_obs
+        est_piece = np.zeros((pred_length, 3))
+        gt_piece = seq[end_obs:min(end_pred, N)].copy()
+
         current_t = time_seq[end_obs - 1]
+        ptr = 0
         for j in range(end_obs, min(end_pred, N)):
             dt = time_seq[j] - current_t
             kf.update_F_Q(dt)
             kf.predict()
-            full_pred[j] = kf.get_pos()
+            est_piece[ptr] = kf.get_pos()
+            ptr += 1
             current_t = time_seq[j]
 
-        start += slide_step
-    return full_pred
+        output_wins.append({
+            "gt_pred": gt_piece,
+            "est_pred": est_piece
+        })
+        start += stride
+    # return 必须顶格，在while循环外面！！
+    return output_wins
+
+
+def calc_metrics_from_windows(window_collection, pred_steps):
+    ade_all = []
+    fde_all = []
+    horizon_err = [[] for _ in range(pred_steps)]
+
+    all_gt = []
+    all_pred = []
+
+    for win in window_collection:
+        gt = win["gt_pred"]
+        pred = win["est_pred"]
+        L = len(gt)
+        # 只保留完整pred_steps长度窗口
+        if L < pred_steps:
+            continue
+
+        disp = np.linalg.norm(gt - pred, axis=1)
+        ade_all.append(np.mean(disp))
+        fde_all.append(disp[-1])
+
+        for h in range(pred_steps):
+            horizon_err[h].append(disp[h])
+
+        all_gt.append(gt)
+        all_pred.append(pred)
+
+    all_gt = np.vstack(all_gt)
+    all_pred = np.vstack(all_pred)
+
+    rmse = np.sqrt(np.mean(np.sum((all_gt - all_pred) ** 2, axis=1)))
+    rmse_x = np.sqrt(np.mean((all_gt[:, 0] - all_pred[:, 0]) ** 2))
+    rmse_y = np.sqrt(np.mean((all_gt[:, 1] - all_pred[:, 1]) ** 2))
+    rmse_z = np.sqrt(np.mean((all_gt[:, 2] - all_pred[:, 2]) ** 2))
+
+    mean_ade = np.mean(ade_all)
+    mean_fde = np.mean(fde_all)
+    horizon_mean = [np.mean(arr) for arr in horizon_err]
+
+    # =========一共7个返回值！顺序不能乱=========
+    return rmse, mean_ade, mean_fde, rmse_x, rmse_y, rmse_z, horizon_mean
 
 # ====================== 主程序入口 ======================
 if __name__ == "__main__":
-    csv_path = "../mmaud_mavic3_gt_relative.csv"
+    import os
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(BASE_DIR, "./data/mmaud_mavic3_gt_relative.csv")
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].values
     gt_all = df[["x", "y", "z"]].values
 
-    # 运行CA-KF滑动窗口滤波
-    kf_traj = sliding_ca_predict_overlap(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.01)
+    # 接收窗口列表
+    out_wins = sliding_ca_predict_overlap(gt_all, timestamps, obs_steps, pred_steps, std_pos=0.05, std_acc=0.01)
+    print("=====验证输出类型=====")
+    print(type(out_wins))
+    print("窗口数量:", len(out_wins))
 
-
-    # 计算指标
-    rmse, ade, fde, rmse_x, rmse_y, rmse_z = compute_pred_only_metrics(gt_all, kf_traj, obs_steps)
-    disp_err = np.linalg.norm(gt_all - kf_traj, axis=1)
+    rmse, mean_ade, mean_fde, rmse_x, rmse_y, rmse_z, horizon_mean = calc_metrics_from_windows(out_wins, pred_steps)
 
     print("=" * 42)
-    print(f"三维 CA-KF 匀加速滤波 | obs={obs_steps}, pred={pred_steps}")
+    print(f"三维 CA-KF | obs={obs_steps}, pred={pred_steps}")
     print("=" * 42)
-    print(f"整体RMSE : {rmse:.6f} m")
-    print(f"ADE      : {ade:.6f} m")
-    print(f"FDE      : {fde:.6f} m")
-    print("-" * 42)
-    print(f"RMSE_X   : {rmse_x:.6f} m")
-    print(f"RMSE_Y   : {rmse_y:.6f} m")
-    print(f"RMSE_Z   : {rmse_z:.6f} m")
+    print(f"ADE      : {mean_ade:.6f} m")
+    print(f"FDE      : {mean_fde:.6f} m")
+    for step, val in enumerate(horizon_mean, start=1):
+        print(f"Horizon {step} : {val:.6f} m")
     print("=" * 42)
+
+
+
 
     # 保存汇总指标csv
     metrics_df = pd.DataFrame({
         "metric": ["RMSE_3D", "ADE", "FDE", "RMSE_X", "RMSE_Y", "RMSE_Z"],
-        "value": [rmse, ade, fde, rmse_x, rmse_y, rmse_z],
+        "value": [rmse, mean_ade, mean_fde, rmse_x, rmse_y, rmse_z],
         "unit": ["m", "m", "m", "m", "m", "m"]
     })
     metrics_df.to_csv(r"C:\Users\86134\Desktop\drone\results\tables\ca_kf_summary.csv", index=False)
@@ -224,42 +265,25 @@ if __name__ == "__main__":
     plt.rcParams["axes.unicode_minus"] = False
 
     # 图1：3D轨迹
-    fig1 = plt.figure(figsize=(10,8))
+    plt.rcParams["font.sans-serif"] = ["SimHei"]
+    plt.rcParams["axes.unicode_minus"] = False
+
+    fig1 = plt.figure(figsize=(10, 8))
     ax1 = fig1.add_subplot(111, projection='3d')
-    ax1.plot(gt_all[:,0], gt_all[:,1] , gt_all[:,2], c="#ff3333", lw=1.8, label="真值")
-    ax1.plot(kf_traj[:,0], kf_traj[:,1], kf_traj[:,2], c="#0066ff", lw=0.7, label="CA_KF匀加速滤波")
-    ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
-    ax1.set_title("3D轨迹 CA_KF")
-    ax1.legend(); ax1.grid()
-    fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_3d.png", dpi=150, bbox_inches="tight")
+    win0 = out_wins[236]
+
+    # 真值：散点（圆点）
+    ax1.scatter(gt_all[:, 0], gt_all[:, 1], gt_all[:, 2], c="#ff3333", s=6, alpha=0.7, label="真值")
+    # CA-KF轨迹：实线
+    ax1.plot(win0["est_pred"][:, 0], win0["est_pred"][:, 1], win0["est_pred"][:, 2], c="#0066ff", lw=0.9, label="CA_KF匀加速滤波")
+
+    ax1.set_xlabel("X (m)", labelpad=8)
+    ax1.set_ylabel("Y (m)", labelpad=8)
+    ax1.set_zlabel("Z (m)", labelpad=8)
+    ax1.set_title("3D轨迹 CA_KF", fontsize=13)
+    ax1.legend();
+    ax1.grid(alpha=0.3)
+
+    fig1.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_window236.png", dpi=150, bbox_inches="tight")
     plt.show()
 
-    # 图2 X时序
-    fig2 = plt.figure(figsize=(10,6))
-    ax2 = fig2.add_subplot(111)
-    ax2.plot(timestamps, gt_all[:,0], "r-", label="真值X")
-    ax2.plot(timestamps, kf_traj[:,0], "b--", label="CA_KF滤波X")
-    ax2.set_title("X轴时序")
-    ax2.legend(); ax2.grid()
-    fig2.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_x.png", dpi=150, bbox_inches="tight")
-    plt.show()
-
-    # 图3 Y时序
-    fig3 = plt.figure(figsize=(10,6))
-    ax3 = fig3.add_subplot(111)
-    ax3.plot(timestamps, gt_all[:,1], "r-", label="真值Y")
-    ax3.plot(timestamps, kf_traj[:,1], "b--", label="CA_KF滤波Y")
-    ax3.set_title("Y轴时序")
-    ax3.legend(); ax3.grid()
-    fig3.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_y.png", dpi=150, bbox_inches="tight")
-    plt.show()
-
-    # 图4 Z时序
-    fig4 = plt.figure(figsize=(10,6))
-    ax4 = fig4.add_subplot(111)
-    ax4.plot(timestamps, gt_all[:,2], "r-", label="真值Z")
-    ax4.plot(timestamps, kf_traj[:,2], "b--", label="CA_KF滤波Z")
-    ax4.set_title("Z轴时序")
-    ax4.legend(); ax4.grid()
-    fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_z.png", dpi=150, bbox_inches="tight")
-    plt.show()
