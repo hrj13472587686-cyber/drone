@@ -124,20 +124,5 @@ ax.view_init(elev=26, azim=-62)
 # 保存3D轨迹图
 save_3d = r"./smoke_3d_obs8_pred5.png"
 plt.savefig(save_3d, dpi=300, bbox_inches="tight")
-print(f"\n3D轨迹图已保存：{save_3d}")
-plt.show()
-
-# ===================== 三合一误差曲线绘图 =====================
-plt.figure(figsize=(12, 4))
-plt.plot(rmse_arr, c="#d63031", lw=1.5, label="RMSE")
-plt.plot(ade_arr, c="#2980b9", lw=1.5, label="ADE")
-plt.plot(fde_arr, c="#27ae60", lw=1.5, label="FDE")
-plt.xlabel("滑动窗口序号")
-plt.ylabel("误差值")
-plt.title(f"obs={obs_steps} pred={pred_steps} 误差变化曲线")
-plt.legend()
-plt.grid(alpha=0.3)
-save_err = r"./smoke_error_curve.png"
-plt.savefig(save_err, dpi=300, bbox_inches="tight")
-print(f"误差曲线图已保存：{save_err}")
+print(f"\3D轨迹图已保存：{save_3d}")
 plt.show()
