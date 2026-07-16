@@ -1,179 +1,71 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import os
+import matplotlib.pyplot as plt
 
-plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei", "SimSun"]
-plt.rcParams["axes.unicode_minus"] = False
+# ====================== 线性回归预测器（仅保留此模型） ======================
+class LinearPredictor:
+    def __init__(self, std_pos=None):
+        self.t0 = None        # 当前窗口第一条观测的时间（时间基准原点）
+        self.tau_obs = []     # 存储相对时间 τ = t - t0
+        self.pos_obs = []     # 存储对应观测位置 [x,y,z]
+        self.coeff = None     # 拟合系数 shape(3,2) 每行 [k, b]
 
-# -------------------------- 1. CA3D 恒加速度卡尔曼(原有) --------------------------
-class CA3DKalmanFilter:
-    def __init__(self, std_pos, std_acc):
-        self.x = np.zeros((9, 1))
-        self.P = np.diag(np.ones(9) * 1.0)
-        self.std_pos = std_pos
-        self.std_acc = std_acc
-        self.dt = None
+    def init_state(self, pos, vel=None):
+        """每个滑动窗口开始时调用，清空缓存，初始化预测器"""
+        self.t0 = None
+        self.tau_obs.clear()
+        self.pos_obs.clear()
+        self.coeff = None
 
-    def init_state(self, pos, vel=None, acc=None):
-        self.x[0, 0] = pos[0]
-        self.x[3, 0] = pos[1]
-        self.x[6, 0] = pos[2]
-        if vel is not None:
-            self.x[1, 0] = vel[0]
-            self.x[4, 0] = vel[1]
-            self.x[7, 0] = vel[2]
-        if acc is not None:
-            self.x[2, 0] = acc[0]
-            self.x[5, 0] = acc[1]
-            self.x[8, 0] = acc[2]
+    def add_observation(self, time_stamp, pos):
+        """新增一组观测 (绝对时间, 三维坐标)"""
+        if self.t0 is None:
+            self.t0 = time_stamp   # 第一条数据定为时间零点
+        tau = time_stamp - self.t0  # 转为窗口局部相对时间
+        self.tau_obs.append(tau)
+        self.pos_obs.append(np.array(pos))
 
-    def update_F_Q(self, dt):
-        self.dt = dt
-        dt2 = dt ** 2
-        dt3 = dt ** 3
-        dt4 = dt ** 4
-        dt5 = dt ** 5
+    def fit_model(self):
+        """最小二乘求解 k,b；返回是否拟合成功"""
+        if len(self.tau_obs) < 2:
+            return False   # 至少2个点才能拟合直线
 
-        F1d = np.array([
-            [1, dt, dt2/2],
-            [0, 1, dt],
-            [0, 0, 1]
-        ])
-        self.F = np.block([
-            [F1d, np.zeros((3,3)), np.zeros((3,3))],
-            [np.zeros((3,3)), F1d, np.zeros((3,3))],
-            [np.zeros((3,3)), np.zeros((3,3)), F1d]
-        ])
+        tau_arr = np.array(self.tau_obs)
+        pos_mat = np.array(self.pos_obs)  # [N,3]
 
-        sa2 = self.std_acc ** 2
-        Q1d = sa2 * np.array([
-            [dt5/20, dt4/8,  dt3/6],
-            [dt4/8,  dt3/3,  dt2/2],
-            [dt3/6,  dt2/2,  dt]
-        ])
-        self.Q = np.block([
-            [Q1d, np.zeros((3,3)), np.zeros((3,3))],
-            [np.zeros((3,3)), Q1d, np.zeros((3,3))],
-            [np.zeros((3,3)), np.zeros((3,3)), Q1d]
-        ])
+        self.coeff = np.zeros((3, 2))
+        # 构造设计矩阵 X = [τ , 1]
+        X = np.vstack([tau_arr, np.ones_like(tau_arr)]).T
 
-        self.H = np.zeros((3, 9))
-        self.H[0,0] = 1.0
-        self.H[1,3] = 1.0
-        self.H[2,6] = 1.0
-        self.R = np.diag([self.std_pos**2]*3)
+        # x/y/z 三个维度分别独立线性回归
+        for dim in range(3):
+            y = pos_mat[:, dim]
+            # lstsq最小二乘：min||X·w - y||²
+            sol, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+            self.coeff[dim] = sol  # sol=[k, b]
+        return True
 
-    def predict(self):
-        self.x = self.F @ self.x
-        self.P = self.F @ self.P @ self.F.T + self.Q
+    def predict_at_time(self, target_t):
+        """输入绝对时刻，输出该时刻预测坐标"""
+        success = self.fit_model()
+        if not success:
+            # 数据不足无法拟合直线，直接返回最后观测值
+            return self.pos_obs[-1].copy()
 
-    def update(self, z):
-        z = np.array(z).reshape(3,1)
-        y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.solve(S, np.eye(3))
-        self.x = self.x + K @ y
-        I = np.eye(9)
-        self.P = (I - K@self.H) @ self.P @ (I - K@self.H).T + K @ self.R @ K.T
+        tau_pred = target_t - self.t0
+        pred = np.zeros(3)
+        for dim in range(3):
+            k, b = self.coeff[dim]
+            pred[dim] = k * tau_pred + b
+        return pred
 
     def get_pos(self):
-        return np.array([self.x[0,0], self.x[3,0], self.x[6,0]])
+        """兼容旧滤波器接口，返回最新观测位置（占位函数）"""
+        if len(self.pos_obs) == 0:
+            return np.zeros(3)
+        return self.pos_obs[-1].copy()
 
-# -------------------------- 2. CV3D 恒速度卡尔曼 --------------------------
-class CV3DKalmanFilter:
-    def __init__(self, std_pos, std_acc):
-        self.x = np.zeros((6, 1))
-        self.P = np.diag(np.array([40.0,20.0,20.0,1.0,1.0,1.0]))
-        self.std_pos = std_pos
-        self.std_acc = std_acc
-        self.dt = None
-
-    def init_state(self, pos, vel=None, acc=None):
-        self.x[0,0] = pos[0]
-        self.x[1,0] = pos[1]
-        self.x[2,0] = pos[2]
-        if vel is not None:
-            self.x[3,0] = vel[0]
-            self.x[4,0] = vel[1]
-            self.x[5,0] = vel[2]
-
-    def update_F_Q(self, dt):
-        self.dt = dt
-        F1d = np.array([[1, dt],[0, 1]])
-        self.F = np.block([
-            [F1d, np.zeros((2,2)), np.zeros((2,2))],
-            [np.zeros((2,2)), F1d, np.zeros((2,2))],
-            [np.zeros((2,2)), np.zeros((2,2)), F1d]
-        ])
-        sa2 = self.std_acc ** 2
-        Q1d = sa2 * np.array([[dt**3/3, dt**2/2],[dt**2/2, dt]])
-        self.Q = np.block([
-            [Q1d, np.zeros((2,2)), np.zeros((2,2))],
-            [np.zeros((2,2)), Q1d, np.zeros((2,2))],
-            [np.zeros((2,2)), np.zeros((2,2)), Q1d]
-        ])
-        self.H = np.zeros((3,6))
-        self.H[0,0]=1.0
-        self.H[1,1]=1.0
-        self.H[2,2]=1.0
-        self.R = np.diag([self.std_pos**2]*3)
-
-    def predict(self):
-        self.x = self.F @ self.x
-        self.P = self.F @ self.P @ self.F.T + self.Q
-
-    def update(self, z):
-        z = np.array(z).reshape(3,1)
-        y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.solve(S, np.eye(3))
-        self.x = self.x + K @ y
-        I = np.eye(6)
-        KH = K @ self.H
-        self.P = (I-KH)@self.P@(I-KH).T + K@self.R@K.T
-
-    def get_pos(self):
-        return np.array([self.x[0,0], self.x[1,0], self.x[2,0]])
-
-# -------------------------- 3. 线性基准：滑动窗口最小二乘LR（匀速模型） --------------------------
-class LinearBaseline3D:
-    def __init__(self):
-        self.buffer = []  # list [t, x,y,z]
-        self.vx = 0.0
-        self.vy = 0.0
-        self.vz = 0.0
-        self.x0 = 0.0
-        self.y0 = 0.0
-        self.z0 = 0.0
-
-    def init_state(self, pos, vel=None, acc=None):
-        """对齐KF统一接口，acc参数占位兼容"""
-        self.buffer.clear()
-
-    def add_obs(self, t, pos):
-        self.buffer.append([float(t), pos[0], pos[1], pos[2]])
-
-    def fit(self):
-        n = len(self.buffer)
-        if n < 2:
-            return
-        data = np.array(self.buffer)
-        t_arr = data[:,0:1]
-        xyz = data[:,1:]
-        A = np.hstack([t_arr, np.ones_like(t_arr)])
-        theta,_,_,_ = np.linalg.lstsq(A, xyz, rcond=None)
-        self.vx, self.x0 = theta[:,0]
-        self.vy, self.y0 = theta[:,1]
-        self.vz, self.z0 = theta[:,2]
-
-    def predict_at_time(self, t_query):
-        x = self.vx * t_query + self.x0
-        y = self.vy * t_query + self.y0
-        z = self.vz * t_query + self.z0
-        return np.array([x,y,z])
-
-# -------------------------- 4. 指标计算函数（完全沿用原版） --------------------------
+# -------------------------- 指标函数 --------------------------
 def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
     if gt_win_full.ndim != 2 or gt_win_full.shape[-1] != 3:
         raise ValueError(f"gt shape expect [T,3], get {gt_win_full.shape}")
@@ -199,80 +91,9 @@ def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
 
     return rmse, ade, fde, rmse_x, rmse_y, rmse_z
 
-# -------------------------- 5. 统一滑动窗口评测入口 --------------------------
-def sliding_evaluate_windows(seq, time_seq, obs_steps, pred_steps,
-                             stride=1, model_type="CAKF", std_pos=0.05, std_acc=0.1):
-    N = len(seq)
-    win_total = obs_steps + pred_steps
-    metric_records = []
-
-    start = 0
-    while True:
-        end_window = start + win_total
-        if end_window > N:
-            break
-
-        gt_win = seq[start:end_window].copy()
-        pred_win = np.zeros_like(gt_win)
-
-        # ========= 模型初始化分支 =========
-        if model_type == "CAKF":
-            tracker = CA3DKalmanFilter(std_pos, std_acc)
-        elif model_type == "CVKF":
-            tracker = CV3DKalmanFilter(std_pos, std_acc)
-        elif model_type == "LR":
-            tracker = LinearBaseline3D()
-        else:
-            raise NotImplementedError("model_type: CAKF / CVKF / LR")
-
-        tracker.init_state(pos=seq[start])
-        pred_win[0] = seq[start]
-
-        # 计算初始速度用于KF初始化（LR不需要）
-        v0 = None
-        if start + 1 < N:
-            dt0 = time_seq[start+1] - time_seq[start]
-            v0 = (seq[start+1] - seq[start]) / dt0
-            if model_type in ["CAKF","CVKF"]:
-                tracker.init_state(pos=seq[start], vel=v0)
-
-        # 观测窗口前obs_steps帧
-        for idx_win in range(1, obs_steps):
-            g = start + idx_win
-            t_curr = time_seq[g]
-            if model_type in ["CAKF","CVKF"]:
-                dt = time_seq[g] - time_seq[g-1]
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                tracker.update(seq[g])
-                pred_win[idx_win] = tracker.get_pos()
-            else: # LR基准
-                tracker.add_obs(t_curr, seq[g])
-                tracker.fit()
-                pred_win[idx_win] = tracker.predict_at_time(t_curr)
-
-        # 多步预测阶段
-        current_t = time_seq[start + obs_steps - 1]
-        for idx_win in range(obs_steps, win_total):
-            g = start + idx_win
-            t_future = time_seq[g]
-            if model_type in ["CAKF","CVKF"]:
-                dt = t_future - current_t
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                pred_win[idx_win] = tracker.get_pos()
-                current_t = t_future
-            else: # LR线性外推
-                pred_win[idx_win] = tracker.predict_at_time(t_future)
-
-        metrics = compute_pred_only_metrics(gt_win, pred_win, obs_steps)
-        metric_records.append(metrics)
-        start += stride
-    return np.array(metric_records)
-
-# -------------------------- 6. 全局重叠平均预测轨迹 --------------------------
+# -------------------------- 重叠预测轨迹生成函数（LR专用） --------------------------
 def sliding_predict_overlap(seq, time_seq, obs_steps, pred_steps,
-                            stride=1, model_type="CAKF", std_pos=0.05, std_acc=0.1):
+                            filter_cls, std_pos, stride=1):
     N = len(seq)
     full_pred = np.zeros_like(seq)
     pred_cnt = np.zeros_like(seq)
@@ -284,54 +105,30 @@ def sliding_predict_overlap(seq, time_seq, obs_steps, pred_steps,
         if end_obs >= N:
             break
 
-        if model_type == "CAKF":
-            tracker = CA3DKalmanFilter(std_pos, std_acc)
-        elif model_type == "CVKF":
-            tracker = CV3DKalmanFilter(std_pos, std_acc)
-        elif model_type == "LR":
-            tracker = LinearBaseline3D()
-        else:
-            raise NotImplementedError
+        kf = LinearPredictor(std_pos)
+        kf.init_state(pos=seq[start])
 
-        tracker.init_state(pos=seq[start])
-        if start + 1 < N and model_type in ["CAKF","CVKF"]:
-            dt0 = time_seq[start+1] - time_seq[start]
-            v0 = (seq[start+1] - seq[start]) / dt0
-            tracker.init_state(pos=seq[start], vel=v0)
-
-        # 观测段
         for i in range(start, end_obs):
+            t_curr = time_seq[i]
             if i == start:
                 full_pred[i] += seq[i]
                 pred_cnt[i] += 1
+                kf.add_observation(t_curr, seq[i])
                 continue
-            t_i = time_seq[i]
-            if model_type in ["CAKF","CVKF"]:
-                dt = time_seq[i] - time_seq[i-1]
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                tracker.update(seq[i])
-                full_pred[i] += tracker.get_pos()
-            else:
-                tracker.add_obs(t_i, seq[i])
-                tracker.fit()
-                full_pred[i] += tracker.predict_at_time(t_i)
+
+            kf.add_observation(t_curr, seq[i])
+            pred_pos = kf.predict_at_time(t_curr)
+            full_pred[i] += pred_pos
             pred_cnt[i] += 1
 
-        # 预测段
+        # 多步外推预测
         pred_end = min(end_pred, N)
-        current_t = time_seq[end_obs - 1]
         for j in range(end_obs, pred_end):
-            t_j = time_seq[j]
-            if model_type in ["CAKF","CVKF"]:
-                dt = t_j - current_t
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                full_pred[j] += tracker.get_pos()
-                current_t = t_j
-            else:
-                full_pred[j] += tracker.predict_at_time(t_j)
+            t_future = time_seq[j]
+            pred_pos = kf.predict_at_time(t_future)
+            full_pred[j] += pred_pos
             pred_cnt[j] += 1
+
         start += stride
 
     mask = pred_cnt > 0
@@ -339,132 +136,204 @@ def sliding_predict_overlap(seq, time_seq, obs_steps, pred_steps,
     full_pred[~mask] = seq[~mask]
     return full_pred
 
-# -------------------------- 主运行入口 --------------------------
+# -------------------------- 滑动窗口评测函数（LR专用） --------------------------
+def sliding_evaluate_windows(seq, time_seq, obs_steps, pred_steps,
+                             filter_cls, std_pos, stride=1):
+    N = len(seq)
+    win_total_len = obs_steps + pred_steps
+    metric_records = []
+
+    start = 0
+    while True:
+        end_window = start + win_total_len
+        if end_window > N:
+            break
+
+        gt_win = seq[start:end_window].copy()
+        pred_win = np.zeros_like(gt_win)
+
+        # 初始化线性回归预测器
+        kf = LinearPredictor(std_pos)
+        kf.init_state(pos=seq[start])
+        # 窗口第0点直接赋值
+        pred_win[0] = seq[start]
+        # 第一条观测存入缓存
+        kf.add_observation(time_seq[start], seq[start])
+
+        # ============ 观测段 (1 ~ obs_steps-1) ============
+        for idx_win in range(1, obs_steps):
+            g = start + idx_win
+            t_now = time_seq[g]
+            pos_meas = seq[g]
+
+            # LR：存入当前观测
+            kf.add_observation(t_now, pos_meas)
+            # 使用已有全部观测拟合，预测当前时刻位置
+            pred_win[idx_win] = kf.predict_at_time(t_now)
+
+        # ============ 预测段 (obs_steps ~ end) ============
+        current_t = time_seq[start + obs_steps - 1]
+        for idx_win in range(obs_steps, win_total_len):
+            g = start + idx_win
+            t_future = time_seq[g]
+            # 仅外推，不再新增观测
+            pred_win[idx_win] = kf.predict_at_time(t_future)
+            current_t = t_future
+
+        metrics = compute_pred_only_metrics(gt_win, pred_win, obs_steps)
+        metric_records.append(metrics)
+        start += stride
+
+    return np.array(metric_records)
+
+# -------------------------- 主函数 --------------------------
 if __name__ == "__main__":
-    # ========== 配置 ==========
+    # 超参配置
     obs_steps = 8
     pred_steps = 5
+    dim=3
     stride = 1
     std_pos = 0.05
-    std_acc = 0.1
 
-    # 可选："CAKF" / "CVKF" / "LR"
-    model_type = "CVKF"
+    # 创建输出目录
+    os.makedirs("results/tables", exist_ok=True)
+    fig_save_path = r"C:\Users\86134\Desktop\drone\results\figures\LR_3d.png"
+    os.makedirs(os.path.dirname(fig_save_path), exist_ok=True)
 
     csv_path = "data/mmaud_mavic3_gt_relative.csv"
-    csv_data = np.genfromtxt(csv_path, delimiter=',', skip_header=1, usecols=(0,4,5,6))
+    csv_data = np.genfromtxt(
+        csv_path,
+        delimiter=',',
+        skip_header=1,
+        usecols=(0, 4, 5, 6)
+    )
+
     t_all = csv_data[:, 0]
     gt_all = csv_data[:, 1:4]
+
     mask = ~np.isnan(gt_all).any(axis=1)
     t_all = t_all[mask]
     gt_all = gt_all[mask]
-    print(f"总轨迹点数：{len(gt_all)} | Model = {model_type}")
 
-    # 全局预测轨迹 & 指标
-    kf_traj = sliding_predict_overlap(gt_all, t_all, obs_steps=obs_steps, pred_steps=pred_steps,
-                                      stride=stride, model_type=model_type, std_pos=std_pos, std_acc=std_acc)
-    metrics = sliding_evaluate_windows(gt_all, t_all, obs_steps=obs_steps, pred_steps=pred_steps,
-                                       stride=stride, model_type=model_type, std_pos=std_pos, std_acc=std_acc)
+    print(f"成功加载轨迹数据：共 {len(gt_all)} 个有效点")
 
-    # 输出汇总指标
-    if metrics.shape[0] > 0:
-        mean_rmse, mean_ade, mean_fde, rx, ry, rz = metrics.mean(axis=0)
-        print("==== 全局平均指标 ====")
-        print(f"窗口总数: {metrics.shape[0]}")
-        print(f"RMSE = {mean_rmse:.4f}")
-        print(f"ADE = {mean_ade:.4f}")
-        print(f"FDE = {mean_fde:.4f}")
-        print(f"RMSE_X = {rx:.4f}, RMSE_Y = {ry:.4f}, RMSE_Z = {rz:.4f}")
+    traj_lr = sliding_predict_overlap(
+        seq=gt_all,
+        time_seq=t_all,
+        obs_steps=obs_steps,
+        pred_steps=pred_steps,
+        filter_cls=LinearPredictor,
+        std_pos=std_pos,
+        stride=stride
+    )
 
-        out_dir = "results/tables"
-        os.makedirs(out_dir, exist_ok=True)
-        save_name = f"{model_type}_metrics_summary.csv"
+    metric_lr = sliding_evaluate_windows(
+        seq=gt_all,
+        time_seq=t_all,
+        obs_steps=obs_steps,
+        pred_steps=pred_steps,
+        filter_cls=LinearPredictor,
+        std_pos=std_pos,
+        stride=stride
+    )
+
+    if metric_lr.shape[0] > 0:
+        rmse, ade, fde, rx, ry, rz = metric_lr.mean(axis=0)
+        print("==== Linear Regression 评测结果 ====")
+        print(f"窗口数量: {metric_lr.shape[0]}")
+        print(f"RMSE = {rmse:.4f}")
+        print(f"ADE  = {ade:.4f}")
+        print(f"FDE  = {fde:.4f}")
         summary_data = np.array([
-            ["窗口数量", metrics.shape[0]],
-            ["RMSE", round(mean_rmse, 4)],
-            ["ADE", round(mean_ade, 4)],
-            ["FDE", round(mean_fde, 4)],
-            ["RMSE_X", round(rx, 4)],
-            ["RMSE_Y", round(ry, 4)],
-            ["RMSE_Z", round(rz, 4)]
+            ["窗口数量", metric_lr.shape[0]],
+            ["RMSE", round(rmse, 4)],
+            ["ADE", round(ade, 4)],
+            ["FDE", round(fde, 4)],
+            ["RMSE_X", round(rx,4)],
+            ["RMSE_Y", round(ry,4)],
+            ["RMSE_Z", round(rz,4)]
         ])
-        np.savetxt(os.path.join(out_dir, save_name), summary_data, delimiter=",", fmt="%s", encoding="utf-8")
-        print(f"指标保存: {os.path.join(out_dir, save_name)}")
+        np.savetxt("results/tables/lr_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
 
-    # ========== 单窗口可视化（完全沿用你原有绘图逻辑） ==========
+        # ====================== 【指定窗口切片功能】 ======================
+        # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
     target_win_idx = 700
-    if 0 <= target_win_idx < len(metrics):
-        win_rmse, win_ade, win_fde, _, _, _ = metrics[target_win_idx]
-        print(f"\n==== 第{target_win_idx}窗口指标 ====")
-        print(f"RMSE={win_rmse:.4f}, ADE={win_ade:.4f}, FDE={win_fde:.4f}")
+
+    if 0 <= target_win_idx < len(traj_lr):
+        # 取出当前窗口三项误差指标
+        win_rmse, win_ade, win_fde, _, _, _ = metric_lr[target_win_idx]
+        print(f"==== 第{target_win_idx}个窗口 单独指标 ====")
+        print(f"窗口RMSE={win_rmse:.4f}, ADE={win_ade:.4f}, FDE={win_fde:.4f}")
 
         win_total_len = obs_steps + pred_steps
         start = target_win_idx * stride
         end = start + win_total_len
+        # 窗口内真值与时间
         win_gt = gt_all[start:end]
         win_time = t_all[start:end]
         win_pred = np.zeros_like(win_gt)
         win_pred[0] = win_gt[0]
 
-        # 初始化跟踪器
-        if model_type == "CAKF":
-            tracker = CA3DKalmanFilter(std_pos, std_acc)
-        elif model_type == "CVKF":
-            tracker = CV3DKalmanFilter(std_pos, std_acc)
-        else:
-            tracker = LinearBaseline3D()
-        tracker.init_state(pos=win_gt[0])
-        if len(win_gt)>1 and model_type in ["CAKF","CVKF"]:
-            dt0 = win_time[1] - win_time[0]
-            v0 = (win_gt[1] - win_gt[0]) / dt0
-            tracker.init_state(pos=win_gt[0], vel=v0)
+        kf = LinearPredictor(std_pos)
+        kf.init_state(pos=win_gt[0])
+        # 存入窗口第0帧观测！
+        kf.add_observation(win_time[0], win_gt[0])
 
-        # 观测段推演
+        # 观测段滤波
+        # 观测段 LR 等价写法
         for idx_win in range(1, obs_steps):
-            t_curr = win_time[idx_win]
-            if model_type in ["CAKF","CVKF"]:
-                dt = win_time[idx_win] - win_time[idx_win-1]
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                tracker.update(win_gt[idx_win])
-                win_pred[idx_win] = tracker.get_pos()
-            else:
-                tracker.add_obs(t_curr, win_gt[idx_win])
-                tracker.fit()
-                win_pred[idx_win] = tracker.predict_at_time(t_curr)
-
-        # 预测段外推
+            t_now = win_time[idx_win]
+            pos_now = win_gt[idx_win]
+            # LR只需要存入观测，不需要predict/correct
+            kf.add_observation(t_now, pos_now)
+            # 使用所有已存入数据拟合，估计当前时刻位置
+            win_pred[idx_win] = kf.predict_at_time(t_now)
+        # 预测段多步外推
         current_t = win_time[obs_steps - 1]
         for idx_win in range(obs_steps, win_total_len):
             t_future = win_time[idx_win]
-            if model_type in ["CAKF","CVKF"]:
-                dt = t_future - current_t
-                tracker.update_F_Q(dt)
-                tracker.predict()
-                win_pred[idx_win] = tracker.get_pos()
-                current_t = t_future
-            else:
-                win_pred[idx_win] = tracker.predict_at_time(t_future)
+            win_pred[idx_win] = kf.predict_at_time(t_future)
+            current_t = t_future
 
-        # 保存窗口指标csv
-        win_metric_data = np.array([["RMSE", win_rmse],["ADE", win_ade],["FDE", win_fde]])
-        np.savetxt(f"{model_type}_window_{target_win_idx}_metrics.csv", win_metric_data, delimiter=",", fmt="%s")
+        # 1. CSV只保存当前窗口RMSE,ADE,FDE，不再输出时序数据
+        win_metric_data = np.array([
+            ["RMSE", win_rmse],
+            ["ADE", win_ade],
+            ["FDE", win_fde]
+        ])
+        save_csv_name = f"Linear_window_{target_win_idx}_metrics.csv"
+        np.savetxt(save_csv_name, win_metric_data, delimiter=",", fmt="%s", encoding="utf-8")
+        print(f"窗口指标CSV已保存：{save_csv_name}")
 
-        # 绘图逻辑完全不变
+        # 2. 3D图：全轨迹灰色 + 切片history橙色 + future蓝色
         fig = plt.figure(figsize=(10, 7))
         ax = fig.add_subplot(111, projection='3d')
+
+        # 整条完整真值：浅灰色背景
         ax.plot(gt_all[:, 0], gt_all[:, 1], gt_all[:, 2], c="#999922", lw=0.7, alpha=0.6, label="True Trajectory")
+
+        # 窗口观测历史段 history：橙色
         hist_gt = win_gt[:obs_steps]
         ax.plot(hist_gt[:, 0], hist_gt[:, 1], hist_gt[:, 2], c="orange", lw=1, label="History")
         ax.scatter(hist_gt[:, 0], hist_gt[:, 1], hist_gt[:, 2], c="orange", s=20)
+
+        # 窗口预测未来段 future：蓝色
         fut_pred = win_pred[obs_steps:]
-        ax.plot(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", lw=1, label="Future Pred")
+        fut_gt_true = win_gt[obs_steps:]
+        ax.plot(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", lw=1, label="Future")
         ax.scatter(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", s=20)
-        ax.set_xlabel("X 坐标(m)")
-        ax.set_ylabel("Y 坐标(m)")
-        ax.set_zlabel("Z 坐标(m)")
-        ax.set_title(f"{model_type} | 窗口{target_win_idx} | obs={obs_steps}, pred={pred_steps}")
+
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
+        ax.set_title(f"win{target_win_idx} | obs={obs_steps} pred={pred_steps}")
         ax.legend()
         plt.grid(True, alpha=0.3)
-        plt.savefig(f"{model_type}_window_{target_win_idx}_3d_plot.png", dpi=300, bbox_inches='tight')
+
+        save_img_name = f"Linear_window_{target_win_idx}_3d_plot.png"
+        plt.savefig(save_img_name, dpi=300, bbox_inches='tight')
+
         plt.show()
+        print(f"窗口3D对比图已保存：{save_img_name}\n")
+    else:
+        print(f"窗口索引超出范围！总窗口数：{len(traj_lr)}，请修改target_win_idx 取值 0~{len(traj_lr) - 1}")
