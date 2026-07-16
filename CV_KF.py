@@ -3,13 +3,9 @@ import matplotlib.pyplot as plt
 import os
 
 # ====================== 3D CV卡尔曼滤波器 ======================
+
 class CV3DKalmanFilter:
     def __init__(self, std_pos, std_vel):
-        """
-        std_pos: 位置观测噪声标准差
-        std_vel: 速度过程噪声标准差(CV模型驱动噪声)
-        状态向量 x = [x,y,z,vx,vy,vz]^T
-        """
         self.x = np.zeros((6, 1))
         self.P = np.diag(np.ones(6) * 1.0)
         self.std_pos = std_pos
@@ -17,7 +13,7 @@ class CV3DKalmanFilter:
         self.dt = None
 
     def init_state(self, pos, vel=None):
-        """初始化状态向量"""
+        """初始化状态向量 [x,y,z,vx,vy,vz]^T"""
         pos = np.array(pos).reshape(3, 1)
         if vel is None:
             vel = np.zeros((3, 1))
@@ -38,7 +34,6 @@ class CV3DKalmanFilter:
             [0, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 1]
         ])
-
         q1 = self.std_vel ** 2 * dt4 / 4
         q2 = self.std_vel ** 2 * dt3 / 2
         q3 = self.std_vel ** 2 * dt2
@@ -58,6 +53,7 @@ class CV3DKalmanFilter:
         self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])
 
     def predict(self):
+        """预测步：状态+协方差完整传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
@@ -65,14 +61,107 @@ class CV3DKalmanFilter:
         z = np.array(z).reshape(3, 1)
         y = z - self.H @ self.x
         S = self.H @ self.P @ self.H.T + self.R
-        S += 1e-8 * np.eye(3)  # 防止奇异无法求逆
+        S += 1e-8 * np.eye(3)
         K = self.P @ self.H.T @ np.linalg.inv(S)
         self.x = self.x + K @ y
-        self.P = (np.eye(6) - K @ self.H) @ self.P
+        I6 = np.eye(6)
+        self.P = (I6 - K @ self.H) @ self.P @ (I6 - K @ self.H).T + K @ self.R @ K.T
 
     def get_pos(self):
-        return self.x[:3, 0]
+        return self.x[:3,0]
 
+# ====================== 3D CA-KF 恒加速度卡尔曼滤波类（原有保留） ======================
+class CA3DKalmanFilter:
+    def __init__(self, std_pos, std_acc):
+        self.x = np.zeros((9, 1))
+        self.P = np.diag(np.ones(9) * 1.0)
+        self.std_pos = std_pos
+        self.std_acc = std_acc
+        self.dt = None
+
+    def init_state(self, pos, vel=None, acc=None):
+        """CA模型状态初始化 [x,y,z,vx,vy,vz,ax,ay,az]"""
+        pos = np.array(pos).reshape(3,1)
+        if vel is None:
+            vel = np.zeros((3,1))
+        else:
+            vel = np.array(vel).reshape(3,1)
+        if acc is None:
+            acc = np.zeros((3,1))
+        else:
+            acc = np.array(acc).reshape(3,1)
+        self.x = np.vstack([pos, vel, acc])
+
+    def update_F_Q(self, dt):
+        self.dt = dt
+        dt2 = dt ** 2
+        dt3 = dt ** 3
+        dt4 = dt ** 4
+        dt5 = dt ** 5
+
+        F_1d = np.array([
+            [1, dt, dt2/2],
+            [0, 1, dt],
+            [0, 0, 1]
+        ])
+        self.F = np.block([
+                [F_1d, np.zeros((3, 3)), np.zeros((3, 3))],
+                [np.zeros((3, 3)), F_1d, np.zeros((3, 3))],
+                [np.zeros((3, 3)), np.zeros((3, 3)), F_1d]
+               ])
+        q1 = self.std_acc**2 * dt5 / 20
+        q2 = self.std_acc**2 * dt4 / 8
+        q3 = self.std_acc**2 * dt3 / 6
+        q4 = self.std_acc**2 * dt2 / 2
+        q5 = self.std_acc**2 * dt3 / 3
+        q6 = self.std_acc**2 * dt / 1
+        Q_1d = np.array([
+            [q1, q2, q3],
+            [q2, q5, q4],
+            [q3, q4, q6]
+        ])
+        self.Q = np.block([
+            [Q_1d, np.zeros((3, 3)), np.zeros((3, 3))],
+            [np.zeros((3, 3)), Q_1d, np.zeros((3, 3))],
+            [np.zeros((3, 3)), np.zeros((3, 3)), Q_1d]
+        ])
+        self.H = np.zeros((3, 9))
+        self.H[0, 0] = 1
+        self.H[1, 3] = 1
+        self.H[2, 6] = 1
+        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])
+
+    def predict(self):
+        self.x = self.F @ self.x
+        self.P = self.F @ self.P @ self.F.T + self.Q
+
+    def update(self, z):
+        z = np.array(z).reshape(3, 1)
+        y = z - self.H @ self.x
+        S = self.H @ self.P @ self.H.T + self.R
+        S += 1e-8 * np.eye(3)
+        K = self.P @ self.H.T @ np.linalg.inv(S)
+        self.x = self.x + K @ y
+        I = np.eye(9)
+        self.P = (I - K @ self.H) @ self.P @ (I - K @ self.H).T + K @ self.R @ K.T
+
+    def get_pos(self):
+        x = self.x[0, 0]
+        y = self.x[3, 0]
+        z = self.x[6, 0]
+        return np.array([x, y, z])
+
+    def get_vel(self):
+        vx = self.x[1, 0]
+        vy = self.x[4, 0]
+        vz = self.x[7, 0]
+        return np.array([vx, vy, vz])
+
+    def get_acc(self):
+        ax = self.x[2, 0]
+        ay = self.x[5, 0]
+        az = self.x[8, 0]
+        return np.array([ax, ay, az])
 
 # -------------------------- 2. 指标计算函数 --------------------------
 def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):

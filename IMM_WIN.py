@@ -491,16 +491,92 @@ if __name__ == "__main__":
         ])
         np.savetxt("results/tables/imm_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
 
-    # 3D绘图
-    fig = plt.figure(figsize=(10,7))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(gt_all[:,0], gt_all[:,1], gt_all[:,2], c="#ff3333", s=8, alpha=0.7, label=" Truth")
-    ax.plot(traj_imm[:,0], traj_imm[:,1], traj_imm[:,2], c="#0066ff", lw=1.0, label="IMM")
-    ax.set_xlabel("X (m)")
-    ax.set_ylabel("Y (m)")
-    ax.set_zlabel("Z (m)")
-    ax.set_title("IMM  Trajectory")
-    ax.legend()
-    ax.grid(alpha=0.3)
-    fig.savefig(fig_save_path, dpi=300, bbox_inches="tight")
-    plt.show()
+    # ====================== 【指定窗口切片功能】 ======================
+    # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
+    target_win_idx = 700
+
+    if 0 <= target_win_idx < len(traj_imm):
+        # 取出当前窗口三项误差指标
+        win_rmse, win_ade, win_fde, _, _, _ = metric_imm[target_win_idx]
+        print(f"==== 第{target_win_idx}个窗口 单独指标 ====")
+        print(f"窗口RMSE={win_rmse:.4f}, ADE={win_ade:.4f}, FDE={win_fde:.4f}")
+
+        win_total_len = obs_steps + pred_steps
+        start = target_win_idx * stride
+        end = start + win_total_len
+        # 窗口内真值与时间
+        win_gt = gt_all[start:end]
+        win_time = t_all[start:end]
+
+        # 重建KF窗口预测（修复pos传参bug）
+        kf = IMM3DFilter(std_pos, std_vel_cv, std_acc_ca)
+        first_pos = win_gt[0]
+
+        if len(win_gt) > 1:
+            dt0 = win_time[1] - win_time[0]
+            v0 = (win_gt[1] - win_gt[0]) / dt0
+            kf.init_state(pos=first_pos, vel=v0)
+        else:
+            kf.init_state(pos=first_pos)
+
+        win_pred = np.zeros_like(win_gt)
+        win_pred[0] = win_gt[0]
+
+        # 观测段滤波
+        for idx_win in range(1, obs_steps):
+            dt = win_time[idx_win] - win_time[idx_win - 1]
+            kf.update_F_Q(dt)
+            kf.predict()
+            kf.correct(win_gt[idx_win])
+            win_pred[idx_win] = kf.get_pos()
+        # 预测段多步外推
+        current_t = win_time[obs_steps - 1]
+        for idx_win in range(obs_steps, win_total_len):
+            dt = win_time[idx_win] - current_t
+            kf.update_F_Q(dt)
+            kf.predict()
+            win_pred[idx_win] = kf.get_pos()
+            current_t = win_time[idx_win]
+
+        # 1. CSV只保存当前窗口RMSE,ADE,FDE，不再输出时序数据
+        win_metric_data = np.array([
+            ["RMSE", win_rmse],
+            ["ADE", win_ade],
+            ["FDE", win_fde]
+        ])
+        save_csv_name = f"IMM_window_{target_win_idx}_metrics.csv"
+        np.savetxt(save_csv_name, win_metric_data, delimiter=",", fmt="%s", encoding="utf-8")
+        print(f"窗口指标CSV已保存：{save_csv_name}")
+
+        # 2. 3D图：全轨迹灰色 + 切片history橙色 + future蓝色
+        fig = plt.figure(figsize=(10, 7))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 整条完整真值：浅灰色背景
+        ax.plot(gt_all[:, 0], gt_all[:, 1], gt_all[:, 2], c="#999922", lw=0.7, alpha=0.6, label="True Trajectory")
+
+        # 窗口观测历史段 history：橙色
+        hist_gt = win_gt[:obs_steps]
+        ax.plot(hist_gt[:, 0], hist_gt[:, 1], hist_gt[:, 2], c="orange", lw=1, label="History")
+        ax.scatter(hist_gt[:, 0], hist_gt[:, 1], hist_gt[:, 2], c="orange", s=20)
+
+        # 窗口预测未来段 future：蓝色
+        fut_pred = win_pred[obs_steps:]
+        fut_gt_true = win_gt[obs_steps:]
+        ax.plot(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", lw=1, label="Future")
+        ax.scatter(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", s=20)
+
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
+        ax.set_title(f"win{target_win_idx} | obs={obs_steps} pred={pred_steps}")
+        ax.legend()
+        plt.grid(True, alpha=0.3)
+
+        save_img_name = f"IMM_window_{target_win_idx}_3d_plot.png"
+        plt.savefig(save_img_name, dpi=300, bbox_inches='tight')
+
+        plt.show()
+        print(f"窗口3D对比图已保存：{save_img_name}\n")
+    else:
+        print(f"窗口索引超出范围！总窗口数：{len(traj_imm)}，请修改target_win_idx 取值 0~{len(traj_imm) - 1}")
