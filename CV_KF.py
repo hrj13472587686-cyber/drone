@@ -358,3 +358,36 @@ if __name__ == "__main__":
     ax.grid(alpha=0.3)
     fig.savefig(fig_save_path, dpi=300, bbox_inches="tight")
     plt.show()
+
+    # 图2 X时序
+    fig2 = plt.figure(figsize=(10, 6))
+    ax2 = fig2.add_subplot(111)
+    ax2.plot(t_all, gt_all[:, 0], "r.", label="true X")
+    ax2.plot(t_all, kf_traj[:, 0], "b-", label="CV-KF X")
+    ax2.set_title("X")
+    ax2.legend()
+    ax2.grid()
+    fig2.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_x.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
+    # 图3 Y时序
+    fig3 = plt.figure(figsize=(10, 6))
+    ax3 = fig3.add_subplot(111)
+    ax3.plot(t_all, gt_all[:, 1], "r.", label="true Y")
+    ax3.plot(t_all, kf_traj[:, 1], "b-", label="CV-KF Y")
+    ax3.set_title("Y")
+    ax3.legend()
+    ax3.grid()
+    fig3.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_y.png", dpi=150, bbox_inches="tight")
+    plt.show()
+
+    # 图4 Z时序
+    fig4 = plt.figure(figsize=(10, 6))
+    ax4 = fig4.add_subplot(111)
+    ax4.plot(t_all, gt_all[:, 2], "r.", label="true Z")
+    ax4.plot(t_all, kf_traj[:, 2], "b-", label="CV-KF Z")
+    ax4.set_title("Z")
+    ax4.legend()
+    ax4.grid()
+    fig4.savefig(r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_z.png", dpi=150, bbox_inches="tight")
+    plt.show()

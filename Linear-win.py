@@ -253,7 +253,7 @@ if __name__ == "__main__":
             ["RMSE_Y", round(ry,4)],
             ["RMSE_Z", round(rz,4)]
         ])
-        np.savetxt("results/tables/lr_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
+        np.savetxt("results/tables/linear_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
 
         # ====================== 【指定窗口切片功能】 ======================
         # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
