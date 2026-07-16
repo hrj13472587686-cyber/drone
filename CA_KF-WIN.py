@@ -207,54 +207,37 @@ def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps,
 # -------------------------- 主函数（直接读取CSV真值轨迹） --------------------------
 if __name__ == "__main__":
     # 超参配置
-    obs_steps = 8       # 观测长度
-    pred_steps = 5     # 预测步数
+    obs_steps = 8
+    pred_steps = 5
     stride = 1
     std_pos = 0.05
     std_acc = 0.1
 
-    # ========== 读取你的CSV ==========
+
     csv_path = "data/mmaud_mavic3_gt_relative.csv"
-    csv_data = np.genfromtxt(csv_path, delimiter=',', skip_header=1, usecols=(0,4,5,6))
+    csv_data = np.genfromtxt(
+        csv_path,
+        delimiter=',',
+        skip_header=1,
+        usecols=(0, 4, 5, 6)
+    )
+
     t_all = csv_data[:, 0]
     gt_all = csv_data[:, 1:4]
+
     mask = ~np.isnan(gt_all).any(axis=1)
     t_all = t_all[mask]
     gt_all = gt_all[mask]
-    print(f"总轨迹点数：{len(gt_all)}")
 
     # 全局预测 + 全部窗口指标
     kf_traj = sliding_ca_predict_overlap(gt_all, t_all, obs_steps=obs_steps, pred_steps=pred_steps, stride=stride, std_pos=std_pos, std_acc=std_acc)
     metrics = sliding_ca_evaluate_windows(gt_all, t_all, obs_steps=obs_steps, pred_steps=pred_steps, stride=stride, std_pos=std_pos, std_acc=std_acc)
 
-    # 全局指标打印+保存
-    if metrics.shape[0] > 0:
-        mean_rmse, mean_ade, mean_fde, rx, ry, rz = metrics.mean(axis=0)
-        print("==== CA-KF 全局平均指标 ====")
-        print(f"窗口总数: {metrics.shape[0]}")
-        print(f"RMSE = {mean_rmse:.4f}")
-        print(f"ADE = {mean_ade:.4f}")
-        print(f"FDE = {mean_fde:.4f}")
-        print(f"RMSE_X = {rx:.4f}, RMSE_Y = {ry:.4f}, RMSE_Z = {rz:.4f}")
 
-        # 保存全局汇总csv
-        summary_data = np.array([
-            ["窗口数量", metrics.shape[0]],
-            ["RMSE", round(mean_rmse, 4)],
-            ["ADE", round(mean_ade, 4)],
-            ["FDE", round(mean_fde, 4)],
-            ["RMSE_X", round(rx, 4)],
-            ["RMSE_Y", round(ry, 4)],
-            ["RMSE_Z", round(rz, 4)]
-        ])
-        np.savetxt("results/tables/ca_kf_metrics_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
-        header = "RMSE,ADE,FDE,RMSE_X,RMSE_Y,RMSE_Z"
 
-        print("全局指标文件已保存：ca_kf_metrics_summary \n")
-
-    # ====================== 【指定窗口切片功能】 ======================
-    # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
-    target_win_idx = 236
+        # ====================== 【指定窗口切片功能】 ======================
+        # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
+    target_win_idx = 245
 
     if 0 <= target_win_idx < len(metrics):
         # 取出当前窗口三项误差指标
@@ -302,7 +285,7 @@ if __name__ == "__main__":
             ["ADE", win_ade],
             ["FDE", win_fde]
         ])
-        save_csv_name = f"window_{target_win_idx}_metrics.csv"
+        save_csv_name = f"CA_window_{target_win_idx}_metrics.csv"
         np.savetxt(save_csv_name, win_metric_data, delimiter=",", fmt="%s", encoding="utf-8")
         print(f"窗口指标CSV已保存：{save_csv_name}")
 
@@ -324,14 +307,14 @@ if __name__ == "__main__":
         ax.plot(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", lw=1, label="Future")
         ax.scatter(fut_pred[:, 0], fut_pred[:, 1], fut_pred[:, 2], c="#0066ff", s=20)
 
-        ax.set_xlabel("X 坐标(m)")
-        ax.set_ylabel("Y 坐标(m)")
-        ax.set_zlabel("Z 坐标(m)")
-        ax.set_title(f"第{target_win_idx}窗口 | 观测{obs_steps}步 预测{pred_steps}步")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
+        ax.set_title(f"win{target_win_idx} | obs={obs_steps} pred={pred_steps}")
         ax.legend()
         plt.grid(True, alpha=0.3)
 
-        save_img_name = f"window_{target_win_idx}_3d_plot.png"
+        save_img_name = f"CA_window_{target_win_idx}_3d_plot.png"
         plt.savefig(save_img_name, dpi=300, bbox_inches='tight')
 
         plt.show()

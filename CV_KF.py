@@ -209,7 +209,7 @@ if __name__ == "__main__":
     pred_steps = 5
     stride = 1
     std_pos = 0.05
-    std_vel = 0.1   # 原std_vel重命名，语义更准确
+    std_vel = 0.1
 
     # 创建输出目录
     os.makedirs("results/tables", exist_ok=True)
@@ -254,7 +254,7 @@ if __name__ == "__main__":
             ["RMSE_Y", round(ry,4)],
             ["RMSE_Z", round(rz,4)]
         ])
-        np.savetxt("results/tables/cv_kf_metrics_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
+        np.savetxt("results/tables/cv_kf_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
 
     # 3D绘图
     fig = plt.figure(figsize=(10,7))

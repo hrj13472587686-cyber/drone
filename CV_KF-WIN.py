@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 # ====================== 3D CV卡尔曼滤波器 ======================
 class CV3DKalmanFilter:
@@ -211,10 +210,7 @@ if __name__ == "__main__":
     std_pos = 0.05
     std_vel = 0.1   # 原std_vel重命名，语义更准确
 
-    # 创建输出目录
-    os.makedirs("results/tables", exist_ok=True)
-    fig_save_path = r"C:\Users\86134\Desktop\drone\results\figures\cv_kf_3d.png"
-    os.makedirs(os.path.dirname(fig_save_path), exist_ok=True)
+
 
     csv_path = "data/mmaud_mavic3_gt_relative.csv"
     csv_data = np.genfromtxt(
@@ -238,27 +234,11 @@ if __name__ == "__main__":
     metrics = sliding_cv_evaluate_windows(gt_all, t_all, obs_steps=obs_steps, pred_steps=pred_steps,
                                           stride=stride, std_pos=std_pos, std_vel=std_vel)
 
-    if metrics.shape[0] > 0:
-        mean_rmse, mean_ade, mean_fde, rx, ry, rz = metrics.mean(axis=0)
-        print("==== CV-KF 评测结果 ====")
-        print(f"窗口数量: {metrics.shape[0]}")
-        print(f"RMSE = {mean_rmse:.4f}")
-        print(f"ADE  = {mean_ade:.4f}")
-        print(f"FDE  = {mean_fde:.4f}")
-        summary_data = np.array([
-            ["窗口数量", metrics.shape[0]],
-            ["RMSE", round(mean_rmse, 4)],
-            ["ADE", round(mean_ade, 4)],
-            ["FDE", round(mean_fde, 4)],
-            ["RMSE_X", round(rx,4)],
-            ["RMSE_Y", round(ry,4)],
-            ["RMSE_Z", round(rz,4)]
-        ])
-        np.savetxt("results/tables/cv_kf_metrics_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
+
 
         # ====================== 【指定窗口切片功能】 ======================
         # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
-    target_win_idx = 236
+    target_win_idx = 700
 
     if 0 <= target_win_idx < len(metrics):
         # 取出当前窗口三项误差指标
@@ -331,7 +311,7 @@ if __name__ == "__main__":
         ax.set_xlabel("X (m)")
         ax.set_ylabel("Y (m)")
         ax.set_zlabel("Z (m)")
-        ax.set_title(f"win{target_win_idx} | obs{obs_steps} pred{pred_steps}")
+        ax.set_title(f"win{target_win_idx} | obs={obs_steps} pred={pred_steps}")
         ax.legend()
         plt.grid(True, alpha=0.3)
 

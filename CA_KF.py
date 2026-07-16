@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 # -------------------------- 1. CA卡尔曼滤波器 --------------------------
 class CA3DKalmanFilter:
@@ -212,9 +211,6 @@ if __name__ == "__main__":
 
     # ========== 核心修改：直接读取CSV真值轨迹 ==========
     csv_path = "data/mmaud_mavic3_gt_relative.csv"
-
-    # 读取CSV：跳过表头，逗号分隔
-    # 列索引：0=timestamp, 4=x, 5=y, 6=z
     csv_data = np.genfromtxt(
         csv_path,
         delimiter=',',
@@ -252,11 +248,11 @@ if __name__ == "__main__":
             ["ADE", round(mean_ade, 4)],
             ["FDE", round(mean_fde, 4)],
         ])
-        np.savetxt("results/tables/ca_kf_metrics_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
+        np.savetxt("results/tables/ca_kf_summary.csv", summary_data, delimiter=",", fmt="%s", encoding="utf-8")
 
 
 
-    # 3D轨迹绘图
+    # 3D绘图
     fig = plt.figure(figsize=(10,7))
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(gt_all[:,0], gt_all[:,1], gt_all[:,2], c="#ff3333", s=8, alpha=0.7, label="true")
@@ -264,7 +260,7 @@ if __name__ == "__main__":
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     ax.set_zlabel("Z (m)")
-    ax.set_title("CA-KF 3D")
+    ax.set_title("CA-KF Trajectory")
     ax.legend()
     ax.grid(alpha=0.3)
     fig.savefig(r"C:\Users\86134\Desktop\drone\results\figures\ca_kf_3d.png", dpi=300, bbox_inches="tight")
