@@ -7,17 +7,18 @@ import matplotlib.pyplot as plt
 class CV3DKalmanFilter:
     def __init__(self, std_pos, std_vel):
         self.x = np.zeros((6, 1))
-        self.P = np.diag(np.ones(6) * 1.0)
+        self.P = np.diag(np.ones(6) * 1.0)          #状态估计误差
         self.std_pos = std_pos
         self.std_vel = std_vel
         self.dt = None
 
     def init_state(self, pos, vel=None):
+        """初始化状态向量 [x,y,z,vx,vy,vz]^T"""
         pos = np.array(pos).reshape(3, 1)
         if vel is None:
             vel = np.zeros((3, 1))
         else:
-            vel = np.array(vel).reshape(3, 1)
+            vel = np.array(vel).reshape(3, 1) # 关键：一维速度转列向量
         self.x = np.vstack([pos, vel])
 
     def update_F_Q(self, dt):
@@ -32,7 +33,8 @@ class CV3DKalmanFilter:
             [0, 0, 0, 1, 0, 0],
             [0, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 1]
-        ])
+        ])                                      #状态转移矩阵
+
         q1 = self.std_vel ** 2 * dt4 / 4
         q2 = self.std_vel ** 2 * dt3 / 2
         q3 = self.std_vel ** 2 * dt2
@@ -43,15 +45,16 @@ class CV3DKalmanFilter:
             [q2, 0, 0, q3, 0, 0],
             [0, q2, 0, 0, q3, 0],
             [0, 0, q2, 0, 0, q3]
-        ])
+        ])                                              #过程噪声协方差矩阵
         self.H = np.array([
             [1, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0],
             [0, 0, 1, 0, 0, 0]
-        ])
-        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])
+        ])                                      #观测矩阵
+        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])           #观察噪音
 
     def predict(self):
+        """预测步：状态+协方差完整传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
@@ -68,26 +71,25 @@ class CV3DKalmanFilter:
     def get_pos(self):
         return self.x[:3,0]
 
-# ====================== 3D CA-KF ======================
+# ====================== CA3DKalmanFilter 对齐IMM_WIN：分步构造Q矩阵 ======================
+import numpy as np
+
 class CA3DKalmanFilter:
     def __init__(self, std_pos, std_acc):
+        # 状态向量：x,y,z, vx,vy,vz, ax,ay,az (9,1)
         self.x = np.zeros((9, 1))
-        self.P = np.diag(np.ones(9) * 1.0)
-        self.std_pos = std_pos
-        self.std_acc = std_acc
+        self.P = np.diag(np.ones(9) * 1.0)   # 初始协方差
+        self.std_pos = std_pos                # 位置观测噪声标准差 [m]
+        self.std_acc = std_acc                # 加速度过程噪声（jerk）标准差 [m/s²?]
         self.dt = None
 
     def init_state(self, pos, vel=None, acc=None):
-        pos = np.array(pos).reshape(3,1)
-        if vel is None:
-            vel = np.zeros((3,1))
-        else:
-            vel = np.array(vel).reshape(3,1)
-        if acc is None:
-            acc = np.zeros((3,1))
-        else:
-            acc = np.array(acc).reshape(3,1)
-        self.x = np.vstack([pos, vel, acc])
+        """初始化状态，pos, vel, acc 均为长度3的序列"""
+        self.x[0:3, 0] = np.array(pos).reshape(3)      # x,y,z
+        if vel is not None:
+            self.x[3:6, 0] = np.array(vel).reshape(3)  # vx,vy,vz
+        if acc is not None:
+            self.x[6:9, 0] = np.array(acc).reshape(3)  # ax,ay,az
 
     def update_F_Q(self, dt):
         self.dt = dt
@@ -95,192 +97,157 @@ class CA3DKalmanFilter:
         dt3 = dt ** 3
         dt4 = dt ** 4
         dt5 = dt ** 5
-        F_1d = np.array([
-            [1, dt, dt2/2],
-            [0, 1, dt],
-            [0, 0, 1]
-        ])
+
+
+        I3 = np.eye(3)
+        Z3 = np.zeros((3,3))
         self.F = np.block([
-                [F_1d, np.zeros((3, 3)), np.zeros((3, 3))],
-                [np.zeros((3, 3)), F_1d, np.zeros((3, 3))],
-                [np.zeros((3, 3)), np.zeros((3, 3)), F_1d]
-               ])
-        q1 = self.std_acc**2 * dt5 / 20
-        q2 = self.std_acc**2 * dt4 / 8
-        q3 = self.std_acc**2 * dt3 / 6
-        q4 = self.std_acc**2 * dt2 / 2
-        q5 = self.std_acc**2 * dt3 / 3
-        q6 = self.std_acc**2 * dt
-        Q_1d = np.array([
-            [q1, q2, q3],
-            [q2, q5, q4],
-            [q3, q4, q6]
+            [I3, dt * I3, 0.5 * dt2 * I3],
+            [Z3, I3,      dt * I3],
+            [Z3, Z3,      I3]
         ])
+
+        # 单轴过程噪声协方差 Q1d（来自 jerk 白噪声模型）
+        sa2 = self.std_acc ** 2
+        # 单轴系数
+        q11 = sa2 * dt5 / 20   # 位置方差
+        q12 = sa2 * dt4 / 8    # 位置-速度协方差
+        q13 = sa2 * dt3 / 6    # 位置-加速度协方差
+        q22 = sa2 * dt3 / 3    # 速度方差
+        q23 = sa2 * dt2 / 2    # 速度-加速度协方差
+        q33 = sa2 * dt         # 加速度方差
+
+        # Q 矩阵：块形式，每个块 = 系数 × I3
         self.Q = np.block([
-            [Q_1d, np.zeros((3, 3)), np.zeros((3, 3))],
-            [np.zeros((3, 3)), Q_1d, np.zeros((3, 3))],
-            [np.zeros((3, 3)), np.zeros((3, 3)), Q_1d]
+            [q11 * I3, q12 * I3, q13 * I3],
+            [q12 * I3, q22 * I3, q23 * I3],
+            [q13 * I3, q23 * I3, q33 * I3]
         ])
-        self.H = np.zeros((3, 9))
-        self.H[0, 0] = 1
-        self.H[1, 3] = 1
-        self.H[2, 6] = 1
-        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])
+
+        # 观测矩阵：只测量位置，H = [I3, 0, 0]
+        self.H = np.hstack([np.eye(3), np.zeros((3,6))])
+
+        # 观测噪声协方差（各轴独立、等方差）
+        self.R = np.diag([self.std_pos**2] * 3)
 
     def predict(self):
+        """预测步：状态与协方差传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
-    def update(self, z):
+    def correct(self, z):
+        """更新步：用观测z修正状态和协方差（原 update 方法）"""
         z = np.array(z).reshape(3, 1)
-        y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T + self.R
-        S += 1e-8 * np.eye(3)
-        K = self.P @ self.H.T @ np.linalg.inv(S)
-        self.x = self.x + K @ y
+        y = z - self.H @ self.x               # 新息
+        S = self.H @ self.P @ self.H.T + self.R  # 新息协方差
+        S += 1e-8 * np.eye(3)                 # 防止奇异
+        K = self.P @ self.H.T @ np.linalg.inv(S)  # 卡尔曼增益
+        self.x = self.x + K @ y               # 状态更新
         I = np.eye(9)
+        # Joseph形式协方差更新，保证对称正定
         self.P = (I - K @ self.H) @ self.P @ (I - K @ self.H).T + K @ self.R @ K.T
 
     def get_pos(self):
-        x = self.x[0, 0]
-        y = self.x[3, 0]
-        z = self.x[6, 0]
-        return np.array([x, y, z])
-# =================================================================================
+        """返回当前估计的位置"""
+        return self.x[0:3, 0]
 
-# ===================== IMM Filter (CV + CA 双模型) =====================
+# ====================== IMM3DFilter 转移概率对齐IMM_WIN ======================
 class IMM3DFilter:
     def __init__(self, std_pos, std_vel_cv, std_acc_ca, trans_matrix=None):
-        """
-        :param std_pos: 观测噪声标准差
-        :param std_vel_cv: CV模型过程噪声
-        :param std_acc_ca: CA模型过程噪声
-        :param trans_matrix: 马尔可夫模型转移概率矩阵
-        model 0: CV, model 1: CA
-        """
         self.std_pos = std_pos
-        # 初始化两个子滤波器
         self.filters = [
             CV3DKalmanFilter(std_pos, std_vel_cv),
             CA3DKalmanFilter(std_pos, std_acc_ca)
         ]
-        # 初始模型概率
-        self.mu = np.array([0.5, 0.5])
-        # 模型转移概率矩阵 [2x2]
+        self.mu = np.array([0.8, 0.2])
         if trans_matrix is None:
-            # 自转移概率高，互相跳转概率低
             self.trans = np.array([
-                [0.995, 0.005],
-                [0.005, 0.995]
+                [0.9995, 0.0005],
+                [0.0005, 0.9995]
             ])
         else:
             self.trans = trans_matrix
         self.dt = None
 
     def init_state(self, pos, vel=None):
-        """IMM统一初始化两个子滤波器"""
         for f in self.filters:
             if isinstance(f, CV3DKalmanFilter):
                 f.init_state(pos=pos, vel=vel)
             else:
-                f.init_state(pos=pos, vel=vel, acc=None)
+                f.init_state(pos=pos, vel=vel)
 
     def update_F_Q(self, dt):
-        self.dt = dt
         for f in self.filters:
             f.update_F_Q(dt)
 
     def _mix_state(self):
-        """IMM Step1: 交互混合（Mixing）"""
-        mu = self.mu
+        mu = self.mu.copy()
         trans = self.trans
-        n_model = len(self.filters)
-
-        # 计算预测混合概率 mu_ij
         c_bar = trans.T @ mu
-        mu_ij = np.zeros((n_model, n_model))
-        for j in range(n_model):
-            for i in range(n_model):
+        # 防除零，极小值兜底
+        c_bar[c_bar < 1e-12] = 1e-12
+        mu_ij = np.zeros_like(trans)
+        for j in range(2):
+            for i in range(2):
                 mu_ij[i,j] = trans[i,j] * mu[i] / c_bar[j]
-
-        mixed_states = []
-        mixed_covs = []
-        # 模型0 CV(6维), 模型1 CA(9维)
-        x_cv = self.filters[0].x
-        P_cv = self.filters[0].P
-        x_ca = self.filters[1].x
-        P_ca = self.filters[1].P
-
-        # ======= 混合得到CV的初始状态（来自CV、CA映射到6维）=======
-        x_ca_6 = x_ca[:6,:]
-        # CA协方差映射到6维
-        P_ca_6 = P_ca[:6, :6]
+        x_cv = self.filters[0].x.copy()
+        P_cv = self.filters[0].P.copy()
+        x_ca = self.filters[1].x.copy()
+        P_ca = self.filters[1].P.copy()
+        x_ca_6 = x_ca[:6, :].copy()
+        P_ca_6 = P_ca[:6, :6].copy()
+        # 混合CV
         x0_mix = mu_ij[0,0] * x_cv + mu_ij[1,0] * x_ca_6
-        P0_mix = mu_ij[0,0]*(P_cv + (x_cv - x0_mix)@(x_cv - x0_mix).T) + \
-                 mu_ij[1,0]*(P_ca_6 + (x_ca_6 - x0_mix)@(x_ca_6 - x0_mix).T)
-
-        # ======= 混合得到CA初始状态（CV扩展9维 + CA原始）=======
-        x_cv_9 = np.vstack([x_cv, np.zeros((3,1))])
+        P0_mix = mu_ij[0,0] * (P_cv + (x_cv - x0_mix) @ (x_cv - x0_mix).T) + \
+                 mu_ij[1,0] * (P_ca_6 + (x_ca_6 - x0_mix) @ (x_ca_6 - x0_mix).T)
+        # CV扩9维
+        x_cv_9 = np.zeros((9,1))
+        x_cv_9[:6,0] = x_cv[:,0]
         P_cv_9 = np.zeros((9,9))
         P_cv_9[:6,:6] = P_cv
+        # 混合CA
         x1_mix = mu_ij[0,1] * x_cv_9 + mu_ij[1,1] * x_ca
-        P1_mix = mu_ij[0,1]*(P_cv_9 + (x_cv_9 - x1_mix)@(x_cv_9 - x1_mix).T) + \
-                 mu_ij[1,1]*(P_ca + (x_ca - x1_mix)@(x_ca - x1_mix).T)
-
-        mixed_states.append(x0_mix)
-        mixed_covs.append(P0_mix)
-        mixed_states.append(x1_mix)
-        mixed_covs.append(P1_mix)
-        return mixed_states, mixed_covs, c_bar
+        P1_mix = mu_ij[0,1] * (P_cv_9 + (x_cv_9 - x1_mix) @ (x_cv_9 - x1_mix).T) + \
+                 mu_ij[1,1] * (P_ca + (x_ca - x1_mix) @ (x_ca - x1_mix).T)
+        return [x0_mix, x1_mix], [P0_mix, P1_mix], c_bar
 
     def predict(self):
-        """IMM Step2: 各模型独立预测（使用混合后的初值）"""
         mixed_x, mixed_P, _ = self._mix_state()
-        # 载入混合初始值
         self.filters[0].x = mixed_x[0]
         self.filters[0].P = mixed_P[0]
         self.filters[1].x = mixed_x[1]
         self.filters[1].P = mixed_P[1]
-        # 各自predict
         self.filters[0].predict()
         self.filters[1].predict()
 
     def correct(self, z):
-        """IMM Step3: 滤波更新 + Step4: 更新模型概率"""
-        z = np.array(z).reshape(3,1)
-        # 子滤波器分别校正
+        z = np.array(z).reshape(3, 1)
         self.filters[0].correct(z)
-        self.filters[1].update(z)
+        self.filters[1].correct(z)
 
-        # ========= 计算每个模型似然 =========
-        def calc_likelihood(filter_inst, z_meas):
+        def calc_log_like(filter_inst, z_meas):
             z_pred = filter_inst.H @ filter_inst.x
             v = z_meas - z_pred
             S = filter_inst.H @ filter_inst.P @ filter_inst.H.T + filter_inst.R
-            detS = np.linalg.det(S + 1e-10*np.eye(3))
-            invS = np.linalg.inv(S + 1e-10*np.eye(3))
-            ndim = z_meas.shape[0]
-            lik = np.exp(-0.5 * v.T @ invS @ v) / np.sqrt((2*np.pi)**ndim * detS)
-            return float(lik.item())
-
-        lik0 = calc_likelihood(self.filters[0], z)
-        lik1 = calc_likelihood(self.filters[1], z)
-        lik = np.array([lik0, lik1])
-
-        # 更新模型概率
-        _, _, c_bar = self._mix_state()
-        norm = np.sum(c_bar * lik) + 1e-12
-        self.mu = (c_bar * lik) / norm
+            S += 1e-10 * np.eye(3)
+            detS = np.linalg.det(S)
+            detS = max(detS, 1e-15)
+            invS = np.linalg.inv(S)
+            quad = float(v.T @ invS @ v)
+            log_det = np.log(detS)
+            log_lik = -0.5 * (quad + 3 * np.log(2 * np.pi) + log_det)
+            return log_lik
 
     def get_pos(self):
-        """概率加权融合输出位置"""
         pos0 = self.filters[0].get_pos()
         pos1 = self.filters[1].get_pos()
         pos_fuse = self.mu[0] * pos0 + self.mu[1] * pos1
+        # 兜底：防止mu全0时返回原始CV位置
+        if np.isnan(pos_fuse).any() or np.sum(self.mu) < 1e-12:
+            return pos0
         return pos_fuse
 
     def get_model_prob(self):
-        """返回当前模型概率 [mu_cv, mu_ca]"""
         return self.mu.copy()
 
 # -------------------------- 指标函数（不变） --------------------------
@@ -493,7 +460,7 @@ if __name__ == "__main__":
 
     # ====================== 【指定窗口切片功能】 ======================
     # 修改这里更换你要查看的窗口索引（从0开始，0=第一个窗口）
-    target_win_idx = 700
+    target_win_idx = 236
 
     if 0 <= target_win_idx < len(traj_imm):
         # 取出当前窗口三项误差指标

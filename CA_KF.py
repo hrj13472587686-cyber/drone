@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # -------------------------- 1. CA卡尔曼滤波器 --------------------------
-import numpy as np
 
 class CA3DKalmanFilter:
     def __init__(self, std_pos, std_acc):

@@ -4,24 +4,19 @@ import matplotlib.pyplot as plt
 # ====================== 3D CV卡尔曼滤波器 ======================
 class CV3DKalmanFilter:
     def __init__(self, std_pos, std_vel):
-        """
-        std_pos: 位置观测噪声标准差
-        std_vel: 速度过程噪声标准差(CV模型驱动噪声)
-        状态向量 x = [x,y,z,vx,vy,vz]^T
-        """
         self.x = np.zeros((6, 1))
-        self.P = np.diag(np.ones(6) * 1.0)
+        self.P = np.diag(np.ones(6) * 1.0)          #状态估计误差
         self.std_pos = std_pos
         self.std_vel = std_vel
         self.dt = None
 
     def init_state(self, pos, vel=None):
-        """初始化状态向量"""
+        """初始化状态向量 [x,y,z,vx,vy,vz]^T"""
         pos = np.array(pos).reshape(3, 1)
         if vel is None:
             vel = np.zeros((3, 1))
         else:
-            vel = np.array(vel).reshape(3, 1)
+            vel = np.array(vel).reshape(3, 1) # 关键：一维速度转列向量
         self.x = np.vstack([pos, vel])
 
     def update_F_Q(self, dt):
@@ -36,7 +31,7 @@ class CV3DKalmanFilter:
             [0, 0, 0, 1, 0, 0],
             [0, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 1]
-        ])
+        ])                                      #状态转移矩阵
 
         q1 = self.std_vel ** 2 * dt4 / 4
         q2 = self.std_vel ** 2 * dt3 / 2
@@ -48,15 +43,16 @@ class CV3DKalmanFilter:
             [q2, 0, 0, q3, 0, 0],
             [0, q2, 0, 0, q3, 0],
             [0, 0, q2, 0, 0, q3]
-        ])
+        ])                                              #过程噪声协方差矩阵
         self.H = np.array([
             [1, 0, 0, 0, 0, 0],
             [0, 1, 0, 0, 0, 0],
             [0, 0, 1, 0, 0, 0]
-        ])
-        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])
+        ])                                      #观测矩阵
+        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])           #观察噪音
 
     def predict(self):
+        """预测步：状态+协方差完整传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
@@ -64,14 +60,14 @@ class CV3DKalmanFilter:
         z = np.array(z).reshape(3, 1)
         y = z - self.H @ self.x
         S = self.H @ self.P @ self.H.T + self.R
-        S += 1e-8 * np.eye(3)  # 防止奇异无法求逆
+        S += 1e-8 * np.eye(3)
         K = self.P @ self.H.T @ np.linalg.inv(S)
         self.x = self.x + K @ y
-        self.P = (np.eye(6) - K @ self.H) @ self.P
+        I6 = np.eye(6)
+        self.P = (I6 - K @ self.H) @ self.P @ (I6 - K @ self.H).T + K @ self.R @ K.T
 
     def get_pos(self):
-        return self.x[:3, 0]
-
+        return self.x[:3,0]
 
 # -------------------------- 2. 指标计算函数 --------------------------
 def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):

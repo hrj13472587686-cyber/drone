@@ -56,17 +56,20 @@ class LinearPredictor:
 class CV3DKalmanFilter:
     def __init__(self, std_pos, std_vel):
         self.x = np.zeros((6, 1))
-        self.P = np.diag(np.ones(6) * 1.0)
+        self.P = np.diag(np.ones(6) * 1.0)          #状态估计误差
         self.std_pos = std_pos
         self.std_vel = std_vel
         self.dt = None
+
     def init_state(self, pos, vel=None):
+        """初始化状态向量 [x,y,z,vx,vy,vz]^T"""
         pos = np.array(pos).reshape(3, 1)
         if vel is None:
             vel = np.zeros((3, 1))
         else:
             vel = np.array(vel).reshape(3, 1) # 关键：一维速度转列向量
         self.x = np.vstack([pos, vel])
+
     def update_F_Q(self, dt):
         self.dt = dt
         dt2 = dt ** 2
@@ -79,10 +82,11 @@ class CV3DKalmanFilter:
             [0, 0, 0, 1, 0, 0],
             [0, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 1]
-        ])
-        q1 = self.std_vel**2 * dt4 / 4
-        q2 = self.std_vel**2 * dt3 / 2
-        q3 = self.std_vel**2 * dt2
+        ])                                      #状态转移矩阵
+
+        q1 = self.std_vel ** 2 * dt4 / 4
+        q2 = self.std_vel ** 2 * dt3 / 2
+        q3 = self.std_vel ** 2 * dt2
         self.Q = np.array([
             [q1, 0, 0, q2, 0, 0],
             [0, q1, 0, 0, q2, 0],
@@ -90,26 +94,33 @@ class CV3DKalmanFilter:
             [q2, 0, 0, q3, 0, 0],
             [0, q2, 0, 0, q3, 0],
             [0, 0, q2, 0, 0, q3]
-        ])
-        self.H = np.array([[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,1,0,0,0]])
-        self.R = np.diag([self.std_pos**2]*3)
+        ])                                              #过程噪声协方差矩阵
+        self.H = np.array([
+            [1, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0]
+        ])                                      #观测矩阵
+        self.R = np.diag([self.std_pos**2, self.std_pos**2, self.std_pos**2])           #观察噪音
+
     def predict(self):
+        """预测步：状态+协方差完整传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
     def correct(self, z):
         z = np.array(z).reshape(3, 1)
         y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T
+        S = self.H @ self.P @ self.H.T + self.R
+        S += 1e-8 * np.eye(3)
         K = self.P @ self.H.T @ np.linalg.inv(S)
         self.x = self.x + K @ y
-        I = np.eye(6)  # 统一命名I，不再I6
-        self.P = (I - K @ self.H) @ self.P @ (I - K @ self.H) + K @ self.R @ K.T
+        I6 = np.eye(6)
+        self.P = (I6 - K @ self.H) @ self.P @ (I6 - K @ self.H).T + K @ self.R @ K.T
+
     def get_pos(self):
-        return self.x[:3, 0]
+        return self.x[:3,0]
 
 # ====================== CA3DKalmanFilter 对齐IMM_WIN：分步构造Q矩阵 ======================
-import numpy as np
 
 class CA3DKalmanFilter:
     def __init__(self, std_pos, std_acc):
@@ -135,11 +146,7 @@ class CA3DKalmanFilter:
         dt4 = dt ** 4
         dt5 = dt ** 5
 
-        # 单轴CA模型的转移矩阵(3x3)，可视为基础块
-        # F1d = [[1, dt, dt²/2],
-        #        [0,  1, dt   ],
-        #        [0,  0, 1    ]]
-        # 用块矩阵构建整个9x9的F，每个块是标量乘3x3单位阵
+
         I3 = np.eye(3)
         Z3 = np.zeros((3,3))
         self.F = np.block([
@@ -366,6 +373,7 @@ def rebuild_win(win_gt, win_time, obs_steps, std_pos, std_vel, std_acc, mode):
     # 预测段：先更新F/Q，再predict无参
     current_t = win_time[obs_steps - 1]
     for i in range(obs_steps, N):
+
         t_target = win_time[i]
         if mode == "LR":
             pred[i] = f.predict_at_time(t_target)
