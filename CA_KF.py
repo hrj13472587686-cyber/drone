@@ -2,26 +2,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # -------------------------- 1. CA卡尔曼滤波器 --------------------------
+import numpy as np
+
 class CA3DKalmanFilter:
     def __init__(self, std_pos, std_acc):
+        # 状态向量：x,y,z, vx,vy,vz, ax,ay,az (9,1)
         self.x = np.zeros((9, 1))
-        self.P = np.diag(np.ones(9) * 1.0)
-        self.std_pos = std_pos
-        self.std_acc = std_acc
+        self.P = np.diag(np.ones(9) * 1.0)   # 初始协方差
+        self.std_pos = std_pos                # 位置观测噪声标准差 [m]
+        self.std_acc = std_acc                # 加速度过程噪声（jerk）标准差 [m/s²?]
         self.dt = None
 
     def init_state(self, pos, vel=None, acc=None):
-        self.x[0, 0] = pos[0]
-        self.x[3, 0] = pos[1]
-        self.x[6, 0] = pos[2]
+        """初始化状态，pos, vel, acc 均为长度3的序列"""
+        self.x[0:3, 0] = np.array(pos).reshape(3)      # x,y,z
         if vel is not None:
-            self.x[1, 0] = vel[0]
-            self.x[4, 0] = vel[1]
-            self.x[7, 0] = vel[2]
+            self.x[3:6, 0] = np.array(vel).reshape(3)  # vx,vy,vz
         if acc is not None:
-            self.x[2, 0] = acc[0]
-            self.x[5, 0] = acc[1]
-            self.x[8, 0] = acc[2]
+            self.x[6:9, 0] = np.array(acc).reshape(3)  # ax,ay,az
 
     def update_F_Q(self, dt):
         self.dt = dt
@@ -30,50 +28,62 @@ class CA3DKalmanFilter:
         dt4 = dt ** 4
         dt5 = dt ** 5
 
-        F1d = np.array([
-            [1, dt, dt2/2],
-            [0, 1, dt],
-            [0, 0, 1]
-        ])
+        # 单轴CA模型的转移矩阵(3x3)，可视为基础块
+        #F1d = [[1, dt, dt²/2],
+               # [0,  1, dt   ],
+        #        [0,  0, 1    ]]
+        # 用块矩阵构建整个9x9的F，每个块是标量乘3x3单位阵
+        I3 = np.eye(3)
+        Z3 = np.zeros((3,3))
         self.F = np.block([
-            [F1d, np.zeros((3,3)), np.zeros((3,3))],
-            [np.zeros((3,3)), F1d, np.zeros((3,3))],
-            [np.zeros((3,3)), np.zeros((3,3)), F1d]
+            [I3, dt * I3, 0.5 * dt2 * I3],
+            [Z3, I3,      dt * I3],
+            [Z3, Z3,      I3]
         ])
 
+        # 单轴过程噪声协方差 Q1d（来自 jerk 白噪声模型）
         sa2 = self.std_acc ** 2
-        Q1d = sa2 * np.array([
-            [dt5/20, dt4/8,  dt3/6],
-            [dt4/8,  dt3/3,  dt2/2],
-            [dt3/6,  dt2/2,  dt]
-        ])
+        # 单轴系数
+        q11 = sa2 * dt5 / 20   # 位置方差
+        q12 = sa2 * dt4 / 8    # 位置-速度协方差
+        q13 = sa2 * dt3 / 6    # 位置-加速度协方差
+        q22 = sa2 * dt3 / 3    # 速度方差
+        q23 = sa2 * dt2 / 2    # 速度-加速度协方差
+        q33 = sa2 * dt         # 加速度方差
+
+        # Q 矩阵：块形式，每个块 = 系数 × I3
         self.Q = np.block([
-            [Q1d, np.zeros((3,3)), np.zeros((3,3))],
-            [np.zeros((3,3)), Q1d, np.zeros((3,3))],
-            [np.zeros((3,3)), np.zeros((3,3)), Q1d]
+            [q11 * I3, q12 * I3, q13 * I3],
+            [q12 * I3, q22 * I3, q23 * I3],
+            [q13 * I3, q23 * I3, q33 * I3]
         ])
 
-        self.H = np.zeros((3, 9))
-        self.H[0,0] = 1.0
-        self.H[1,3] = 1.0
-        self.H[2,6] = 1.0
-        self.R = np.diag([self.std_pos**2]*3)
+        # 观测矩阵：只测量位置，H = [I3, 0, 0]
+        self.H = np.hstack([np.eye(3), np.zeros((3,6))])
+
+        # 观测噪声协方差（各轴独立、等方差）
+        self.R = np.diag([self.std_pos**2] * 3)
 
     def predict(self):
+        """预测步：状态与协方差传播"""
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
-    def update(self, z):
-        z = np.array(z).reshape(3,1)
-        y = z - self.H @ self.x
-        S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
-        self.x = self.x + K @ y
+    def correct(self, z):
+        """更新步：用观测z修正状态和协方差（原 update 方法）"""
+        z = np.array(z).reshape(3, 1)
+        y = z - self.H @ self.x               # 新息
+        S = self.H @ self.P @ self.H.T + self.R  # 新息协方差
+        S += 1e-8 * np.eye(3)                 # 防止奇异
+        K = self.P @ self.H.T @ np.linalg.inv(S)  # 卡尔曼增益
+        self.x = self.x + K @ y               # 状态更新
         I = np.eye(9)
-        self.P = (I - K@self.H) @ self.P @ (I - K@self.H).T + K @ self.R @ K.T
+        # Joseph形式协方差更新，保证对称正定
+        self.P = (I - K @ self.H) @ self.P @ (I - K @ self.H).T + K @ self.R @ K.T
 
     def get_pos(self):
-        return np.array([self.x[0,0], self.x[3,0], self.x[6,0]])
+        """返回当前估计的位置"""
+        return self.x[0:3, 0]
 
 # -------------------------- 2. 指标计算函数 --------------------------
 def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
@@ -131,7 +141,7 @@ def sliding_ca_evaluate_windows(seq, time_seq, obs_steps, pred_steps,
             dt = time_seq[g] - time_seq[g-1]
             kf.update_F_Q(dt)
             kf.predict()
-            kf.update(seq[g])
+            kf.correct(seq[g])
             pred_win[idx_win] = kf.get_pos()
 
         current_t = time_seq[start + obs_steps - 1]
@@ -178,7 +188,7 @@ def sliding_ca_predict_overlap(seq, time_seq, obs_steps, pred_steps,
             dt = time_seq[i] - time_seq[i-1]
             kf.update_F_Q(dt)
             kf.predict()
-            kf.update(seq[i])
+            kf.correct(seq[i])
             full_pred[i] += kf.get_pos()
             pred_cnt[i] += 1
 
