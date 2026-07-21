@@ -2,7 +2,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
-# ====================== 线性回归预测器（仅保留此模型） ======================
+# ====================== 线性回归预测器 ======================
 class LinearPredictor:
     def __init__(self, std_pos=None):
         self.t0 = None        # 当前窗口第一条观测的时间（时间基准原点）

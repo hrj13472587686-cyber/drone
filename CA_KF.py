@@ -27,17 +27,13 @@ class CA3DKalmanFilter:
         dt4 = dt ** 4
         dt5 = dt ** 5
 
-        # 单轴CA模型的转移矩阵(3x3)，可视为基础块
-        #F1d = [[1, dt, dt²/2],
-               # [0,  1, dt   ],
-        #        [0,  0, 1    ]]
-        # 用块矩阵构建整个9x9的F，每个块是标量乘3x3单位阵
-        I3 = np.eye(3)
-        Z3 = np.zeros((3,3))
+
+        I3 = np.eye(3)      # 3×3 单位矩阵
+        Z3 = np.zeros((3,3))    # 3×3 零矩阵
         self.F = np.block([
-            [I3, dt * I3, 0.5 * dt2 * I3],
-            [Z3, I3,      dt * I3],
-            [Z3, Z3,      I3]
+            [I3, dt * I3, 0.5 * dt2 * I3],              #位置
+            [Z3,   I3   ,    dt * I3    ],              #速度
+            [Z3,   Z3   ,       I3      ]               #加速度
         ])
 
         # 单轴过程噪声协方差 Q1d（来自 jerk 白噪声模型）
@@ -98,7 +94,7 @@ def compute_pred_only_metrics(gt_win_full, pred_win_full, obs_steps):
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     err = gt_pred - pred_pred
-    disp_err = np.linalg.norm(err, axis=1)
+    disp_err = np.linalg.norm(err, axis=1).lll
 
     rmse = np.sqrt(np.mean(np.sum(err**2, axis=1)))
     ade = np.mean(disp_err)

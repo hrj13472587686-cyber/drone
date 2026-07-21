@@ -158,8 +158,8 @@ class IMM3DFilter:
             CV3DKalmanFilter(std_pos, std_vel_cv),
             CA3DKalmanFilter(std_pos, std_acc_ca)
         ]
-        self.mu = np.array([0.8, 0.2])
-        if trans_matrix is None:
+        self.mu = np.array([0.5, 0.5])           # 初始模型概率
+        if trans_matrix is None:            # Markov 转移概率矩阵
             self.trans = np.array([
                 [0.9995, 0.0005],
                 [0.0005, 0.9995]
@@ -180,12 +180,11 @@ class IMM3DFilter:
             f.update_F_Q(dt)
 
     def _mix_state(self):
-        mu = self.mu.copy()
-        trans = self.trans
-        c_bar = trans.T @ mu
-        # 防除零，极小值兜底
-        c_bar[c_bar < 1e-12] = 1e-12
-        mu_ij = np.zeros_like(trans)
+        mu = self.mu.copy()          # 上一时刻的模型概率 [μ1, μ2]
+        trans = self.trans          # 转移矩阵 Π
+        c_bar = trans.T @ mu        # 预测的模型概率（归一化常数）
+        c_bar[c_bar < 1e-12] = 1e-12        # 防除零，极小值兜底
+        mu_ij = np.zeros_like(trans)        #计算混合权重
         for j in range(2):
             for i in range(2):
                 mu_ij[i,j] = trans[i,j] * mu[i] / c_bar[j]
@@ -211,7 +210,7 @@ class IMM3DFilter:
         return [x0_mix, x1_mix], [P0_mix, P1_mix], c_bar
 
     def predict(self):
-        mixed_x, mixed_P, _ = self._mix_state()
+        mixed_x, mixed_P, self.c_bar = self._mix_state()
         self.filters[0].x = mixed_x[0]
         self.filters[0].P = mixed_P[0]
         self.filters[1].x = mixed_x[1]
@@ -220,10 +219,6 @@ class IMM3DFilter:
         self.filters[1].predict()
 
     def correct(self, z):
-        z = np.array(z).reshape(3, 1)
-        self.filters[0].correct(z)
-        self.filters[1].correct(z)
-
         def calc_log_like(filter_inst, z_meas):
             z_pred = filter_inst.H @ filter_inst.x
             v = z_meas - z_pred
@@ -232,10 +227,23 @@ class IMM3DFilter:
             detS = np.linalg.det(S)
             detS = max(detS, 1e-15)
             invS = np.linalg.inv(S)
-            quad = float(v.T @ invS @ v)
+            quad = (v.T @ invS @ v).item()
             log_det = np.log(detS)
             log_lik = -0.5 * (quad + 3 * np.log(2 * np.pi) + log_det)
             return log_lik
+
+        z = np.array(z).reshape(3, 1)
+        self.filters[0].correct(z)
+        self.filters[1].correct(z)
+        L0 = calc_log_like(self.filters[0], z)
+        L1 = calc_log_like(self.filters[1], z)
+        # 数值稳定处理
+        L_max = max(L0, L1)
+        L0 = np.exp(L0 - L_max)
+        L1 = np.exp(L1 - L_max)
+        # 注意：需要获取 c_bar（应在 predict 中保存为 self.c_bar）
+        self.mu = np.array([L0 * self.c_bar[0], L1 * self.c_bar[1]])
+        self.mu /= self.mu.sum()
 
     def get_pos(self):
         pos0 = self.filters[0].get_pos()
